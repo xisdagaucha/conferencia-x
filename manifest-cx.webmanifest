@@ -1,0 +1,31 @@
+{
+  "name": "Conferência X·is da Gaúcha",
+  "short_name": "Conferência X",
+  "description": "Checklist, produção, reposição e limpeza das lojas Xis da Gaúcha",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e100e",
+  "theme_color": "#0e100e",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "cx-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "cx-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "cx-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "id": "./"
+}

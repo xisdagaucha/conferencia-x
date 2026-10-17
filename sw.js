@@ -1,6 +1,6 @@
 /* Conferência X — guarda o app no aparelho para abrir rápido e funcionar com internet fraca */
-const CACHE = 'conferencia-x-v8';
-const FILES = ['./', './index.html', './adapter.js', './firebase-config.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
+const CACHE = 'conferencia-x-v9';
+const FILES = ['./', './index.html', './adapter.js', './firebase-config.js', './manifest-cx.webmanifest', './cx-icon-192.png', './cx-icon-512.png', './cx-apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {
