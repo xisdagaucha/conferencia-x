@@ -412,21 +412,33 @@ async function compress(file){
       out=cv.toDataURL('image/jpeg',q);if(out.length<230000)break;max=Math.round(max*0.8);q=Math.max(0.45,q-0.08)}
     return out}finally{URL.revokeObjectURL(url)}
 }
-function pedirFoto(areaId){S.fotoFor={store:S.store,areaId};const inp=document.getElementById('foto-in');inp.value='';inp.click()}
+const MAXFOTOS=6;
+function pedirFoto(areaId,extra){S.fotoFor={store:S.store,areaId,extra:!!extra};const inp=document.getElementById('foto-in');inp.value='';inp.click()}
 async function fotoEscolhida(file){
   const f=S.fotoFor;S.fotoFor=null;if(!f||!file)return;
   const c=S.cfg[f.store];const area=c&&(c.areas||[]).find(x=>x.id===f.areaId);if(!area)return;
   S.upl=area.id;render();
+  if(f.extra){try{const r=((S.week[f.store]||{}).areas||{})[area.id]||{};const k=Math.max(1,r.nf||1)+1;if(k>MAXFOTOS){S.upl=null;render();toast('Máximo de '+MAXFOTOS+' fotos por limpeza.');return}
+      const img=await compress(file);const fp=fotoPath(f.store,S.keys.week,area.id)+'_'+k;
+      await S.db.doc(fp).set({img,by:S.me,at:new Date().toISOString(),store:f.store,week:S.keys.week,area:area.id,name:area.name,n:k});
+      const rec=Object.assign({},r,{nf:k,foto:true});const w=S.week[f.store]=Object.assign({},S.week[f.store]||{});w.areas=Object.assign({},w.areas||{});w.areas[area.id]=rec;
+      S.upl=null;render();write('weeks/'+f.store+'_'+S.keys.week,S.weekExists[f.store],{store:f.store,week:S.keys.week},{areas:{[area.id]:rec}});toast('Foto '+k+' enviada.')}
+    catch(e){S.upl=null;render();toast('Não foi possível enviar a foto. Tente de novo.')}
+    return}
   try{const img=await compress(file);
     await S.db.doc(fotoPath(f.store,S.keys.week,area.id)).set({img,by:S.me,at:new Date().toISOString(),store:f.store,week:S.keys.week,area:area.id,name:area.name});
     delete S.fotoCache[fotoPath(f.store,S.keys.week,area.id)];
-    S.upl=null;markArea(f.store,area,true,rotation(f.store,S.keys.wk)[area.id],true);toast('Foto enviada. Limpeza marcada.')}
+    S.upl=null;S.cobrir=null;markArea(f.store,area,true,rotation(f.store,S.keys.wk)[area.id],true);toast('Foto enviada. Limpeza marcada.')}
   catch(e){S.upl=null;render();toast(e&&e.code==='invalid_argument'?'Seu acesso não permite enviar fotos.':'Não foi possível enviar a foto. Tente de novo.')}
 }
+async function fotoDoc(p){let d=S.fotoCache[p];if(!d){const s=await S.db.doc(p).get();d=s.exists?s.data():null;if(d)S.fotoCache[p]=d}return d}
+function fotoModal(){const V=S.fotoView;const m=document.getElementById('modal');if(!V)return;const d=V.list[V.i];const n=V.list.length;
+  m.innerHTML=`<div class="mbox"><img src="${d.img}" alt="Foto ${V.i+1} da limpeza: ${h(d.name)}"><div class="mcap"><div><b>${h(d.name)}</b>${n>1?` <span class="chip num">Foto ${V.i+1} de ${n}</span>`:''}<div class="small muted">${h(d.by)} · ${fmtWhen(d.at)} · ${h(storeName(V.store))}</div></div><div style="display:flex;gap:6px">${n>1?`<button class="btn" data-act="fotonav" data-v="-1" aria-label="Foto anterior" ${V.i===0?'disabled':''}>‹</button><button class="btn" data-act="fotonav" data-v="1" aria-label="Próxima foto" ${V.i===n-1?'disabled':''}>›</button>`:''}<button class="btn" data-act="fechafoto">Fechar</button></div></div></div>`}
 async function verFoto(store,week,aid){
   const p=fotoPath(store,week,aid);const m=document.getElementById('modal');
   m.hidden=false;m.innerHTML='<div class="mbox"><div class="empty">Carregando foto…</div></div>';
-  try{let d=S.fotoCache[p];if(!d){const s=await S.db.doc(p).get();d=s.exists?s.data():null;if(d)S.fotoCache[p]=d}
+  try{const d=await fotoDoc(p);
+    if(d){const list=[d];for(let k=2;k<=MAXFOTOS;k++){const x=await fotoDoc(p+'_'+k);if(!x)break;list.push(x)}S.fotoView={store,list,i:0};fotoModal();return}
     m.innerHTML=d?`<div class="mbox"><img src="${d.img}" alt="Foto da limpeza: ${h(d.name)}"><div class="mcap"><div><b>${h(d.name)}</b><div class="small muted">${h(d.by)} · ${fmtWhen(d.at)} · ${h(storeName(store))}</div></div><button class="btn" data-act="fechafoto">Fechar</button></div></div>`
       :`<div class="mbox"><div class="empty">Foto não encontrada.</div><div class="mcap"><span></span><button class="btn" data-act="fechafoto">Fechar</button></div></div>`}
   catch(e){m.innerHTML='<div class="mbox"><div class="empty">Não foi possível abrir a foto.</div><div class="mcap"><span></span><button class="btn" data-act="fechafoto">Fechar</button></div></div>'}
@@ -440,7 +452,7 @@ function hojeDow(){return new Date(S.keys.date+'T00:00:00Z').getUTCDay()}
 function dataDoDia(d){if(d===''||d==null)return null;return addDays(S.keys.week,diaOrd(d)-1)}
 function areaEstado(a,r){if(r&&r.done)return 'feito';const o=diaOrd(a.dia),t=diaOrd(hojeDow());if(o===99)return 'pendente';return o<t?'atrasado':o===t?'hoje':'pendente'}
 function estadoChip(a,r,store){return estadoChip0(a,r)+(store&&r&&r.done&&r.foto?fotoBtn(store,S.keys.week,a.id):'')}
-function fotoBtn(store,week,aid){return `<button class="btn small fbtn" data-act="verfoto" data-s="${store}" data-w="${week}" data-a="${aid}" aria-label="Ver foto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Foto</button>`}
+function fotoBtn(store,week,aid){const nf=week===S.keys.week?((((S.week[store]||{}).areas||{})[aid]||{}).nf||1):1;return `<button class="btn small fbtn" data-act="verfoto" data-s="${store}" data-w="${week}" data-a="${aid}" aria-label="Ver ${nf>1?nf+' fotos':'foto'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>${nf>1?nf+' fotos':'Foto'}</button>`}
 function estadoChip0(a,r){const e=areaEstado(a,r);return e==='feito'?`<span class="chip ok" title="${h(fmtWhen(r.at))}">Limpo · ${h(r.by)} ${fmtTime(r.at)}</span>`:e==='atrasado'?'<span class="chip bad">Atrasado</span>':e==='hoje'?'<span class="chip me">Hoje</span>':'<span class="chip">Pendente</span>'}
 function sortAreas(list){return list.slice().sort((a,b)=>diaOrd(a.dia)-diaOrd(b.dia))}
 
@@ -775,10 +787,15 @@ function viewChecklist(mode){
   if(!mine.length)out+=`<p class="muted" style="margin:0 0 12px">Nenhuma limpeza pesada ficou com você nesta semana.</p>`;
   else out+=`<div class="clean" style="margin-bottom:14px">${mine.map(a=>{const r=wk[a.id]||{};const e=areaEstado(a,r);const dd=dataDoDia(a.dia);return `<div class="ccard mine ${e}"><div class="cday"><b>${diaNome(a.dia)}${dd?' '+fmtDM(dd):''}</b>${e==='atrasado'?'<span class="chip bad">Atrasado</span>':e==='hoje'?'<span class="chip me">Hoje</span>':''}</div><div class="t">${h(a.name)}</div>
     ${a.proc?`<div class="small"><span class="muted">Como:</span> ${h(a.proc)}</div>`:''}${a.prod?`<div class="small"><span class="muted">Produto:</span> ${h(a.prod)}</div>`:''}
-    ${r.done?`<span class="chip ok">Limpo por ${h(r.by)} · ${fmtWhen(r.at)}</span><div style="display:flex;gap:6px;flex-wrap:wrap">${r.foto?fotoBtn(S.store,S.keys.week,a.id):''}<button class="btn ghost small" data-act="fotoarea" data-id="${a.id}">${r.foto?'Trocar foto':'Enviar foto'}</button><button class="btn ghost small" data-act="area" data-id="${a.id}" data-v="0">Desfazer</button></div>`
+    ${r.done?`<span class="chip ok">Limpo por ${h(r.by)} · ${fmtWhen(r.at)}</span><div style="display:flex;gap:6px;flex-wrap:wrap">${r.foto?fotoBtn(S.store,S.keys.week,a.id):''}${S.upl===a.id?'<button class="btn small" disabled>Enviando foto…</button>':r.foto?((r.nf||1)<MAXFOTOS?`<button class="btn small" data-act="fotomais" data-id="${a.id}">${CAM}+ Mais uma foto</button>`:''):`<button class="btn ghost small" data-act="fotoarea" data-id="${a.id}">Enviar foto</button>`}<button class="btn ghost small" data-act="area" data-id="${a.id}" data-v="0">Desfazer</button></div>`
       :(S.upl===a.id?`<button class="btn primary" disabled>Enviando foto…</button>`:fotoObrig(S.store)?`<button class="btn primary cam" data-act="fotoarea" data-id="${a.id}">${CAM}Tirar foto e marcar como limpo</button>`:`<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn primary cam" data-act="fotoarea" data-id="${a.id}">${CAM}Foto e limpo</button><button class="btn" data-act="area" data-id="${a.id}" data-v="1">Limpo sem foto</button></div>`)}</div>`}).join('')}</div>`;
   if(others.length){
-    out+=`<div class="label" style="margin-bottom:6px">Resto da equipe nesta semana</div><div class="rows">${others.map(a=>{const r=wk[a.id]||{};return `<div class="row"><div class="txt"><div class="t">${h(a.name)}</div><div class="meta">${diaNome(a.dia)} · ${h(rot[a.id])}</div></div>${estadoChip(a,r,S.store)}</div>`}).join('')}</div>`;
+    out+=`<div class="label" style="margin-bottom:6px">Resto da equipe nesta semana</div><p class="small muted" style="margin:0 0 8px">Limpou a área de um colega (falta, troca ou ele estava ocupado)? Toque em “Eu limpei”.</p><div class="rows">${others.map(a=>{const r=wk[a.id]||{};const resp=rot[a.id];
+      const acts=r.done?(r.by===S.me?`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="chip ok">Limpo por você</span>${r.foto?fotoBtn(S.store,S.keys.week,a.id):''}${S.upl===a.id?'<button class="btn small" disabled>Enviando…</button>':r.foto&&(r.nf||1)<MAXFOTOS?`<button class="btn small" data-act="fotomais" data-id="${a.id}">+ Foto</button>`:''}<button class="btn ghost small" data-act="area" data-id="${a.id}" data-v="0">Desfazer</button></div>`:estadoChip(a,r,S.store))
+        :S.upl===a.id?`<button class="btn primary small" disabled>Enviando foto…</button>`
+        :S.cobrir===a.id?`<div style="display:flex;gap:6px;flex-wrap:wrap">${fotoObrig(S.store)?`<button class="btn primary cam small" data-act="fotoarea" data-id="${a.id}">${CAM}Tirar foto e marcar</button>`:`<button class="btn primary cam small" data-act="fotoarea" data-id="${a.id}">${CAM}Foto e limpo</button><button class="btn small" data-act="area" data-id="${a.id}" data-v="1">Limpo sem foto</button>`}<button class="btn ghost small" data-act="cobrir" data-id="">Cancelar</button></div>`
+        :`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${estadoChip(a,r,S.store)}<button class="btn small" data-act="cobrir" data-id="${a.id}">Eu limpei</button></div>`;
+      return `<div class="row"><div class="txt"><div class="t">${h(a.name)}</div><div class="meta">${diaNome(a.dia)} · era de ${h(resp)}${r.done&&r.by&&r.by!==resp&&r.by!==S.me?` · <b>limpo por ${h(r.by)}</b>`:''}</div></div>${acts}</div>`}).join('')}</div>`;
   }
   out+=`</div></section></div>`;
   return out;
@@ -1311,6 +1328,7 @@ function viewAcessos(){
   <div class="field"><span class="label">Gestora</span>${pick('sairg',String(a.sairGest!=null?a.sairGest:30),[['15','15 min'],['30','30 min'],['60','1 hora'],['0','Nunca']])}</div></div></section>`;
   out+=`<section class="panel"><div class="panel-h"><h2>PIN dos funcionários</h2></div><div class="panel-b">
   <p class="small muted" style="margin:0 0 8px">Cada funcionário entra tocando no próprio nome e digitando o PIN de 4 números. Passe o PIN para cada um pessoalmente. Para trocar, digite um novo e toque em Salvar, ou toque em Gerar.</p>`;
+  out+=`<div class="notice" style="margin:0 0 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between"><span class="small"><b>PIN pelo aniversário:</b> dia e mês, 4 números (ex.: aniversário 15/03 → PIN <b>1503</b>). Vale para as duas lojas. Quem entrar na equipe com aniversário cadastrado já ganha esse PIN.</span><button class="btn primary" data-act="pinniver">${S.pinNiverArm?'Toque de novo para confirmar':'Usar aniversário como PIN de todos'}</button></div>`;
   const emps=c.employees||[];
   if(!emps.length)out+='<div class="muted small">Nenhum funcionário nesta loja.</div>';
   emps.forEach(e=>{const pv=pins[s+'_'+e.id];
@@ -1364,6 +1382,17 @@ async function gChange(){
   try{await writeAcc({gestoraHash:await hashPin(a.salt,'G:'+n1)});['ga-cur','ga-new','ga-new2'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});toast('Senha trocada.')}
   catch(e){toast('Não foi possível trocar a senha.')}
 }
+function pinNiver(e){const n=niverNorm(e&&e.niver);return n?n.slice(0,2)+n.slice(3,5):''}
+async function pinsPorAniversario(onlyMissing){
+  let salt=acc().salt;if(!salt){salt=newSalt();await writeAcc({salt})}
+  const pinsPatch={};const sem=[];let n=0;
+  for(const st of STORES){const c=S.cfg[st.id];if(!c||!(c.employees||[]).length)continue;let mud=false;
+    const emps=[];for(const e of c.employees){const pin=pinNiver(e);
+      if(pin&&!(onlyMissing&&e.pinHash)){emps.push(Object.assign({},e,{pinHash:await hashPin(salt,pin)}));pinsPatch[st.id+'_'+e.id]=pin;n++;mud=true}
+      else{emps.push(e);if(!pin&&!onlyMissing)sem.push(e.name)}}
+    if(mud)await S.db.doc('config/'+st.id).update({employees:emps})}
+  if(n){const pref=S.db.doc('acesso/pins');try{await pref.update(pinsPatch)}catch(e){await pref.set(Object.assign({},S.pins||{},pinsPatch))}}
+  return {n,sem}}
 async function setPin(s,id,mode){
   if(S.dirty&&S.cfgStore===s){toast('Salve as outras alterações antes de mexer nos PINs.');return}
   let pin;
@@ -1515,10 +1544,13 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='modal'){e.targ
     if(b.dataset.f==='t'){pd.tem=stepVal(pd.tem,+v,'t');const it=(S.cfg[S.store].items||[]).find(x=>x.id===id);const cp=calcPrec(it,pd.tem);if(cp!=null){pd.pr=cp;if(pe){pe.value=cp;pe.parentNode.classList.toggle('has',cp!=='')}}}else pd.pr=stepVal(pd.pr,+v,'p');
     const inp=b.dataset.f==='t'?te:pe;if(inp){inp.value=b.dataset.f==='t'?pd.tem:pd.pr;inp.parentNode.classList.toggle(b.dataset.f==='t'?'has-tem':'has',inp.value!=='')}
     const st=S.store,tn=S.turno;clearTimeout(commitT[key]);commitT[key]=setTimeout(()=>commitItem(st,tn,id),900);return}
+  if(a==='cobrir'){S.cobrir=id||null;render();return}
   if(a==='fotoarea'){if(S.readOnly){toast('Seu acesso é só de visualização.');return}pedirFoto(id);return}
   if(a==='fotoreq'){const s=S.rotStore;if(S.dirty&&S.cfgStore===s){toast('Salve as alterações em Configurar antes.');return}S.db.doc('config/'+s).update({fotoLimpeza:v==='1'}).then(()=>{S.edit=null;toast(v==='1'?'Foto obrigatória.':'Foto opcional.')},()=>toast('Não foi possível salvar.'));return}
   if(a==='verfoto'){verFoto(b.dataset.s,b.dataset.w,b.dataset.a);return}
-  if(a==='fechafoto'){const m=document.getElementById('modal');m.hidden=true;m.innerHTML='';return}
+  if(a==='fotonav'){const V=S.fotoView;if(V){V.i=Math.max(0,Math.min(V.list.length-1,V.i+(+v)));fotoModal()}return}
+  if(a==='fotomais'){if(S.readOnly){toast('Seu acesso é só de visualização.');return}pedirFoto(id,true);return}
+  if(a==='fechafoto'){S.fotoView=null;const m=document.getElementById('modal');m.hidden=true;m.innerHTML='';return}
   if(a==='lrole'){S.login.step=v;S.login.err='';S.login.pin='';S.login.gpass='';render();return}
   if(a==='lstore'){S.login.store=v;S.login.empId='';render();return}
   if(a==='lemp'){S.login.empId=v;S.login.step='pin';S.login.pin='';S.login.err='';render();return}
@@ -1536,6 +1568,9 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='modal'){e.targ
   if(a==='sairf'){writeAcc({sairFunc:+v}).then(()=>toast('Salvo.'),()=>toast('Não foi possível salvar.'));return}
   if(a==='sairg'){writeAcc({sairGest:+v}).then(()=>toast('Salvo.'),()=>toast('Não foi possível salvar.'));return}
   if(a==='pinset'){setPin(b.dataset.s,b.dataset.id,'input');return}
+  if(a==='pinniver'){if(S.dirty){toast('Salve as outras alterações antes de mexer nos PINs.');return}
+    if(!S.pinNiverArm){S.pinNiverArm=true;render();setTimeout(()=>{S.pinNiverArm=false;render()},6000);return}
+    S.pinNiverArm=false;render();pinsPorAniversario(false).then(r=>{S.edit=null;toast(r.n+' PINs trocados pelo aniversário.'+(r.sem.length?' Sem aniversário cadastrado: '+r.sem.join(', ')+'.':''));render()},()=>toast('Não foi possível trocar os PINs.'));return}
   if(a==='pingen'){setPin(b.dataset.s,b.dataset.id,'gen');return}
   if(a==='mebtn'){S.me=v;ls.set('xg_me',v);render();return}
   if(a==='store'){S.store=v;ls.set('xg_store',v);fixSelections();render();return}
@@ -1545,7 +1580,7 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='modal'){e.targ
     if(t.valor&&!cur.done){const inp=document.getElementById('v-'+id);if(!inp||inp.value===''){toast('Anote o valor antes de marcar.');inp&&inp.focus();return}markTask(S.store,S.turno,t,true,inp.value);return}
     markTask(S.store,S.turno,t,!cur.done);return}
   if(a==='taskval'){const t=c.tasks.find(x=>x.id===id);const inp=document.getElementById('v-'+id);if(!inp.value){toast('Anote o valor antes de registrar.');return}markTask(S.store,S.turno,t,true,inp.value);return}
-  if(a==='area'){const ar=c.areas.find(x=>x.id===id);markArea(S.store,ar,v==='1',rotation(S.store,S.keys.wk)[id]);return}
+  if(a==='area'){S.cobrir=null;const ar=c.areas.find(x=>x.id===id);markArea(S.store,ar,v==='1',rotation(S.store,S.keys.wk)[id]);return}
   if(a==='copyneed'){const x=storeStats(v);const txt='Reposição '+storeName(v)+' – '+fmtDate(S.keys.date)+'\n'+x.need.map(r=>{const p=rPrec(r)!==''?rPrec(r):(r.sug!=null?fmtN(r.sug)+' (sugerido)':'');const t=rTem(r);return '• '+r.name+': '+(p?'precisa '+p:'')+(p&&t?' ':'')+(t?(p?'(tem '+t+')':'tem '+t):'')}).join('\n');
     const done=()=>toast('Lista copiada.');try{navigator.clipboard.writeText(txt).then(done,()=>toast('Não deu para copiar. Selecione a lista na tela.'))}catch(err){toast('Não deu para copiar.')}return}
   if(a==='hstore'){S.hist.store=v;render();return}
@@ -1649,7 +1684,8 @@ async function saveCfg(okMsg){
   const src0=S.edit._src;delete S.edit._src;const E=JSON.parse(JSON.stringify(S.edit));S.edit._src=src0;const s=E._store;delete E._store;delete E._src;
   E.employees=(E.employees||[]).filter(x=>x.name.trim()).map(x=>({...x,name:x.name.trim(),niver:niverNorm(x.niver)}));
   E.tasks=(E.tasks||[]).filter(x=>x.title.trim());E.items=(E.items||[]).filter(x=>x.name.trim());E.categories=catList(E);E.producao=(E.producao||[]).filter(x=>(x.name||'').trim());E.areas=(E.areas||[]).filter(x=>x.name.trim());
-  try{await S.db.doc('config/'+s).set(E);S.dirty=false;S.edit=null;toast(okMsg||'Configuração salva.');render()}
+  try{await S.db.doc('config/'+s).set(E);S.dirty=false;S.edit=null;toast(okMsg||'Configuração salva.');render()
+    if(E.employees.some(e=>!e.pinHash&&pinNiver(e))){S.cfg[s]=E;pinsPorAniversario(true).then(r=>{if(r.n)toast(r.n===1?'PIN do aniversário criado para o funcionário novo.':r.n+' PINs criados pelo aniversário.')},()=>{})}}
   catch(err){toast('Não foi possível salvar. Só a gestora pode alterar a configuração.')}
 }
 
