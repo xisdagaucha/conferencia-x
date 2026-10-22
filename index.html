@@ -357,7 +357,8 @@ table.folg tfoot td{border-top:2px solid var(--line)}
 const STORES_PADRAO=[{id:'barreiros',name:'Barreiros',city:'São José',short:'Barreiros'},{id:'palhoca',name:'Centro',city:'Palhoça',short:'Palhoça'}];
 let STORES=STORES_PADRAO.slice();
 const TURNOS={manha:'Manhã',noite:'Noite',todos:'Todos'};
-const FUNCOES={cozinha:'Cozinha',atendimento:'Atendimento',lider:'Líder',todos:'Todos'};
+const FUNCOES={cozinha:'Cozinha',atendimento:'Atendimento',gestor:'Gestor (as duas lojas)',lider:'Líder',todos:'Todos'};
+function isGestorF(e){return fOf(e)==='gestor'}
 function fOf(x){return (x&&x.funcao)||'cozinha'}
 function matchF(tf,ef){return tf==='todos'||tf===ef}
 function canSee(t,emp){const tf=fOf(t);return tf==='todos'||tf===fOf(emp)||(tf==='lider'&&!!(emp&&emp.lider))}
@@ -365,7 +366,7 @@ const PHASES=[['abertura','Abertura'],['turno','Durante o turno'],['banheiro','H
 const CHECK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
 const S={folgas:{},fol:{month:'',store:'todas'},rel:{store:'todas',per:'7',a:'',b:'',data:null,key:''},repoCat:'',pend:{},fotoCache:{},upl:null,fotoFor:null,repoQ:'',cfgQ:'',db:null,user:null,gestora:false,tab:'preencher',store:'barreiros',turno:'noite',me:'',
-  cfg:{},day:{},week:{},dayExists:{},weekExists:{},keys:null,subs:[],
+  cfg:{},day:{},week:{},dayExists:{},dayAm:{},dayAmExists:{},weekExists:{},keys:null,subs:[],
   hist:{date:'',store:'todas',rows:null,summary:null},pr:{kind:'limpeza',store:'barreiros',week:0,month:'',turno:'ambos'},mon:{store:'barreiros',month:'',turno:'noite',phase:'banheiro',data:null,key:''},rotStore:'barreiros',
   cfgStore:'barreiros',edit:null,dirty:false,readOnly:false};
 
@@ -544,7 +545,9 @@ function numOf(v){const m=String(v==null?'':v).replace(',','.').match(/-?\d+(\.\
 function rTem(r){return r&&r.tem!=null?String(r.tem):''}
 function rPrec(r){return r&&r.precisa!=null?String(r.precisa):(r&&r.qty!=null?String(r.qty):'')}
 function hasRec(r){return rTem(r)!==''||rPrec(r)!==''}
-function idealHoje(item){if(!item)return '';const d=new Date(S.keys.date+'T00:00:00Z').getUTCDay();const v=item.idealDia&&item.idealDia[d];return v!=null&&v!==''?String(v):(item.ideal!=null?String(item.ideal):'')}
+function repoDate(){return S.repoAm?addDays(S.keys.date,1):S.keys.date}
+function repoDay(store){return (S.repoAm?S.dayAm[store]:S.day[store])||{}}
+function idealHoje(item){if(!item)return '';const d=new Date((S.tab==='reposicao'?repoDate():S.keys.date)+'T00:00:00Z').getUTCDay();const v=item.idealDia&&item.idealDia[d];return v!=null&&v!==''?String(v):(item.ideal!=null?String(item.ideal):'')}
 function calcPrec(item,tem){const t=numOf(tem),i=numOf(idealHoje(item));if(t==null||i==null)return null;const p=Math.round((i-t)*100)/100;return p>0?String(p).replace('.',','):''}
 function sugerido(item,r){if(rPrec(r)!==''||!item)return null;const t=numOf(rTem(r)),i=numOf(idealHoje(item));if(t==null||i==null)return null;return Math.max(0,Math.round((i-t)*10)/10)}
 function fmtN(n){return String(n).replace('.',',')}
@@ -553,9 +556,10 @@ function itemsLatest(items){const m={};Object.values(items||{}).forEach(r=>{if(!
 function markItem(store,turno,item,tem,precisa){
   const k=S.keys;const key='dia__'+item.id;
   const rec={id:item.id,tem,precisa,by:S.me,at:new Date().toISOString(),name:item.name,cat:item.cat||'',turno};
-  const path='days/'+store+'_'+k.date;
-  const d=S.day[store]=Object.assign({},S.day[store]||{});d.items=Object.assign({},d.items||{});d.items[key]=rec;setTimeout(render,0);
-  write(path,S.dayExists[store],{store,date:k.date},{items:{[key]:rec}});
+  const am=!!S.repoAm;const dt=am?addDays(k.date,1):k.date;if(am)rec.antes=true;
+  const path='days/'+store+'_'+dt;const box=am?S.dayAm:S.day;
+  const d=box[store]=Object.assign({},box[store]||{});d.items=Object.assign({},d.items||{});d.items[key]=rec;setTimeout(render,0);
+  write(path,(am?S.dayAmExists:S.dayExists)[store],{store,date:dt},{items:{[key]:rec}});
 }
 function markArea(store,area,done,resp,foto){
   const k=S.keys;
@@ -579,6 +583,7 @@ function subscribe(){
     const s=st.id;
     S.subs.push(S.db.doc('config/'+s).onSnapshot(snap=>{S.cfg[s]=snap.exists?snap.data():null;S.cfgLoaded=STORES.every(x=>x.id in S.cfg);applyAuth();fixSelections();render()},onErr));
     S.subs.push(S.db.doc('days/'+s+'_'+k.date).onSnapshot(snap=>{S.dayExists[s]=snap.exists;S.day[s]=snap.exists?snap.data():{};render()},onErr));
+    S.subs.push(S.db.doc('days/'+s+'_'+addDays(k.date,1)).onSnapshot(snap=>{S.dayAmExists[s]=snap.exists;S.dayAm[s]=snap.exists?snap.data():{};if(S.tab==='reposicao')render()},()=>{}));
     S.subs.push(S.db.doc('weeks/'+s+'_'+k.week).onSnapshot(snap=>{S.weekExists[s]=snap.exists;S.week[s]=snap.exists?snap.data():{};render()},onErr));
   });
 }
@@ -693,8 +698,8 @@ function render(){
     const T=[['painel','Painel'],['checklist','Checklist'],['reposicao','Reposição'],['producao','Produção'],['historico','Histórico'],['relatorios','Relatórios'],['rodizio','Rodízio'],['folgas','Folgas'],['mensal','Controle mensal'],['imprimir','Imprimir'],['config','Configurar']];
     tabsEl.className='tabs tiles';tabsEl.innerHTML=T.map(tile).join('');
   }else{
-    const myE=(S.cfg[S.store]&&(S.cfg[S.store].employees||[]).find(e=>e.name===S.me))||{};const TT=[['checklist','Checklist']];if(temBS(S.store,S.turno,myE))TT.push(['banhsal','Banheiro e salão']);TT.push(['reposicao','Reposição']);if(prodList(S.store).some(p=>prodAtivo(p)))TT.push(['producao','Produção']);
-    if(!TT.some(x=>x[0]===S.tab))S.tab='checklist';
+    const myE=(S.cfg[S.store]&&(S.cfg[S.store].employees||[]).find(e=>e.name===S.me))||{};const TT=isGestorF(myE)?[]:[['checklist','Checklist']];if(!isGestorF(myE)&&temBS(S.store,S.turno,myE))TT.push(['banhsal','Banheiro e salão']);TT.push(['reposicao','Reposição']);if(prodList(S.store).some(p=>prodAtivo(p)))TT.push(['producao','Produção']);
+    if(!TT.some(x=>x[0]===S.tab))S.tab=TT[0][0];
     tabsEl.className='tabs tiles '+(TT.length===3?'three':'two');tabsEl.innerHTML=TT.map(tile).join('');
   }
   tabsEl.hidden=false;
@@ -732,7 +737,7 @@ function setupPanel(){
     return `${niverBanner(e)}<section class="panel"><div class="panel-b"><div class="setup">
       <div class="field"><span class="label">Loja</span><div class="t" style="font-weight:800;font-size:17px">${h(storeName(S.store))}</div></div>
       <div class="field"><span class="label">Turno</span>${fixed||ts.length<2?`<div class="t" style="font-weight:800;font-size:17px">${TURNOS[fixed?e.turno:ts[0]]}${jd?' <span class="chip">domingo: turnos juntos</span>':''}</div>`:seg('turno',S.turno,ts.map(t=>[t,TURNOS[t]]))}</div>
-    </div>${(()=>{const pf=proximaFolga(S.store,e);return pf?`<div class="folga-me">Sua próxima folga${isNiver(e,pf)?' (aniversário)':' de domingo'}: <b>${fmtDate(pf)}</b></div>`:''})()}<p class="small muted" style="margin:10px 0 0">${fmtDate(S.keys.date)} · o dia vira às 05h, então o fechamento depois da meia-noite conta no mesmo dia.</p></div></section>${S.readOnly?`<div class="notice">Seu acesso é só de visualização. Peça à gestora para liberar você como colaborador.</div>`:''}`;
+    </div>${(()=>{const pf=isGestorF(e)?'':proximaFolga(S.store,e);return pf?`<div class="folga-me">Sua próxima folga${isNiver(e,pf)?' (aniversário)':' de domingo'}: <b>${fmtDate(pf)}</b></div>`:''})()}<p class="small muted" style="margin:10px 0 0">${fmtDate(S.keys.date)} · o dia vira às 05h, então o fechamento depois da meia-noite conta no mesmo dia.</p></div></section>${S.readOnly?`<div class="notice">Seu acesso é só de visualização. Peça à gestora para liberar você como colaborador.</div>`:''}`;
   }
   const emps=(c.employees||[]).filter(e=>mT(e.turno,S.turno,S.store));
   return `<section class="panel"><div class="panel-b"><div class="setup">
@@ -821,7 +826,7 @@ function stepVal(v,d,f){const s=String(v||'').trim();const m=s.replace(',','.').
 const commitT={};
 function commitItem(store,turno,itemId){const key=store+'|'+turno+'|'+itemId;const pd=S.pend[key];delete S.pend[key];
   const c=S.cfg[store];const it=c&&(c.items||[]).find(x=>x.id===itemId);if(!it||!pd)return;
-  const cur=itemRec((S.day[store]||{}).items,itemId);
+  const cur=itemRec(repoDay(store).items,itemId);
   if(pd.tem.trim()!==rTem(cur)||pd.pr.trim()!==rPrec(cur))markItem(store,turno,it,pd.tem.trim(),pd.pr.trim())}
 // ---------- produção ----------
 function prodMeta(p,date){const d=new Date((date||S.keys.date)+'T00:00:00Z').getUTCDay();const v=p.qtyDia&&p.qtyDia[d];return v!=null&&v!==''?String(v):''}
@@ -868,14 +873,16 @@ function viewRepo(){
   if(!c)return '<div class="empty">Esta loja ainda não foi configurada.</div>';
   let out=`<div class="stack">${setupPanel()}`;
   if(!meOk())return out+'</div>';
-  const items=(S.day[S.store]||{}).items||{};
-  const its=c.items||[];
+  const items=repoDay(S.store).items||{};
+  const its=c.items||[];const am=!!S.repoAm;const amDow=new Date(addDays(S.keys.date,1)+'T00:00:00Z').getUTCDay();
   const pedidos=its.filter(i=>hasRec(itemRec(items,i.id)));
-  out+=`<section class="panel"><div class="panel-h"><h2>Lista de reposição</h2><span class="chip ${pedidos.length?'me':''} num">${pedidos.length} ${pedidos.length===1?'item anotado':'itens anotados'}</span></div><div class="panel-b">
+  out+=`<section class="panel"><div class="panel-h"><h2>Lista de reposição${am?' · para amanhã':''}</h2><span class="chip ${pedidos.length?'me':''} num">${pedidos.length} ${pedidos.length===1?'item anotado':'itens anotados'}</span></div><div class="panel-b">
   <div class="howto"><div><b>Tem</b><span>quanto tem na loja agora</span></div><div><b>Precisa</b><span>quanto pedir ao estoque</span></div></div>
   <p class="small muted" style="margin:0 0 10px">Use as setas ou digite (ex.: 4, 5 potes, 2 cx). Anote quanto <b>tem</b>: quando o item tem quantidade ideal do dia, o <b>precisa</b> é calculado sozinho e você pode ajustar. Salva sozinho.</p>
+  <div class="field" style="margin-bottom:10px"><span class="label">Lista de</span>${seg('repodia',am?'1':'0',[['0','Hoje ('+diaNome(hojeDow()).slice(0,3)+')'],['1','Amanhã ('+diaNome(amDow).slice(0,3)+')']])}</div>
+  ${am?`<div class="notice" style="margin:0 0 10px">Você está anotando para <b>amanhã, ${fmtDate(addDays(S.keys.date,1))}</b>. Quem chegar amanhã já encontra esta lista pronta na aba Reposição.</div>`:''}
   <input type="text" id="repo-q" data-act="repoq" placeholder="Buscar item…" value="${h(S.repoQ)}" aria-label="Buscar item" autocomplete="off">
-  ${pedidos.length?`<div style="margin-top:12px" id="repo-sum"><div class="label" style="margin-bottom:6px">Já anotado hoje (todos os turnos)</div><div class="list-inline">${pedidos.map(i=>{const r=itemRec(items,i.id);return `<span class="chip me" title="${h(r.by)} · ${fmtTime(r.at)}">${h(i.name)}: ${rTem(r)!==''?'tem '+h(rTem(r)):''}${rTem(r)!==''&&rPrec(r)!==''?' · ':''}${rPrec(r)!==''?'precisa '+h(rPrec(r)):''}</span>`}).join('')}</div></div>`:''}`;
+  ${pedidos.length?`<div style="margin-top:12px" id="repo-sum"><div class="label" style="margin-bottom:6px">${am?'Já anotado para amanhã':'Já anotado hoje (todos os turnos)'}</div><div class="list-inline">${pedidos.map(i=>{const r=itemRec(items,i.id);return `<span class="chip me" title="${h(r.by)} · ${fmtTime(r.at)}">${!am&&r.antes?'🌙 ':''}${h(i.name)}: ${rTem(r)!==''?'tem '+h(rTem(r)):''}${rTem(r)!==''&&rPrec(r)!==''?' · ':''}${rPrec(r)!==''?'precisa '+h(rPrec(r)):''}</span>`}).join('')}</div></div>`:''}`;
   const cats=catList(c).filter(x=>its.some(i=>(i.cat||'Outros')===x));
   const anot=cat=>its.filter(i=>(i.cat||'Outros')===cat&&hasRec(itemRec(items,i.id))).length;
   out+=`<div class="catbar" role="group" aria-label="Categorias"><button data-act="repocat" data-v="" aria-pressed="${!S.repoCat}">Todas</button>${cats.map(cat=>{const n=anot(cat);return `<button data-act="repocat" data-v="${h(cat)}" aria-pressed="${S.repoCat===cat}">${h(cat)}${n?` <b>${n}</b>`:''}</button>`}).join('')}</div>`;
@@ -885,7 +892,7 @@ function viewRepo(){
     out+=`<div class="repo-cat" data-c="${h(cat)}"><div class="cat-h"><span>${h(cat)}</span><span class="cat-n">${n?n+' anotado'+(n>1?'s':'')+' · ':''}${list.length} ${list.length===1?'item':'itens'}</span></div><div class="rows">`;
     list.forEach(i=>{shown++;
       const r=itemRec(items,i.id);const pd=S.pend[S.store+'|'+S.turno+'|'+i.id];const tem=pd?pd.tem:rTem(r),pr=pd?pd.pr:rPrec(r);
-      out+=`<div class="row repo-row" data-n="${h(norm(i.name))}"><div class="txt"><div class="t">${h(i.name)}</div>${idealHoje(i)?`<div class="needbox"><span>Precisa ter hoje</span><b>${h(idealHoje(i))}</b></div>`:''}${r.at&&hasRec(r)?`<div class="meta">Anotado por ${h(r.by)}${r.turno&&turnosOf(S.store).length>1&&TURNOS[r.turno]?' ('+TURNOS[r.turno].toLowerCase()+')':''} às ${fmtTime(r.at)}</div>`:''}</div>
+      out+=`<div class="row repo-row" data-n="${h(norm(i.name))}"><div class="txt"><div class="t">${h(i.name)}</div>${idealHoje(i)?`<div class="needbox"><span>Precisa ter ${am?'amanhã':'hoje'}</span><b>${h(idealHoje(i))}</b></div>`:''}${r.at&&hasRec(r)?`<div class="meta">${!am&&r.antes?'🌙 Deixado na noite anterior por ':'Anotado por '}${h(r.by)}${r.turno&&turnosOf(S.store).length>1&&TURNOS[r.turno]?' ('+TURNOS[r.turno].toLowerCase()+')':''} às ${fmtTime(r.at)}</div>`:''}</div>
       <div class="pair">${stepper('t',i,tem,'Tem','has-tem','Quanto tem de ')}${stepper('p',i,pr,'Precisa','has','Quanto precisa de ')}</div></div>`;
     });
     out+=`</div></div>`;
@@ -899,7 +906,7 @@ function storeStats(s){
   const c=S.cfg[s];if(!c)return null;const day=S.day[s]||{};const t=day.tasks||{};const it=day.items||{};
   const per=[];
   turnosHoje(s).forEach(tn=>{
-    const inT=(c.employees||[]).filter(e=>mT(e.turno,tn,s));const fs=[...new Set(inT.map(fOf))].sort();if(inT.some(e=>e.lider))fs.push('lider');
+    const inT=(c.employees||[]).filter(e=>mT(e.turno,tn,s)&&!isGestorF(e));const fs=[...new Set(inT.map(fOf))].sort();if(inT.some(e=>e.lider))fs.push('lider');
     (fs.length?fs:['cozinha']).forEach(f=>{
       const list=(c.tasks||[]).filter(x=>tarefaDia(x,tn,s)&&matchF(fOf(x),f));if(!list.length)return;
       const d=list.filter(x=>(t[tn+'__'+x.id]||{}).done);const pend=list.filter(x=>!(t[tn+'__'+x.id]||{}).done);
@@ -916,7 +923,7 @@ function storeStats(s){
 }
 
 function niverNorm(v){const m=String(v||'').match(/^\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})/);if(!m)return '';const d=+m[1],mo=+m[2];if(d<1||d>31||mo<1||mo>12)return '';return String(d).padStart(2,'0')+'/'+String(mo).padStart(2,'0')}
-function aniversariantes(){const L=[];STORES.forEach(st=>((S.cfg[st.id]||{}).employees||[]).forEach(e=>{const n=niverNorm(e.niver);if(n)L.push({st:st.id,e,n,d:+n.slice(0,2),m:+n.slice(3)})}));return L}
+function aniversariantes(){const L=[];const vis={};STORES.forEach(st=>((S.cfg[st.id]||{}).employees||[]).forEach(e=>{const n=niverNorm(e.niver);if(isGestorF(e)){if(vis[e.id])return;vis[e.id]=1}if(n)L.push({st:st.id,e,n,d:+n.slice(0,2),m:+n.slice(3)})}));return L}
 function spDate(){return new Date(Date.now()-3*3600e3).toISOString().slice(0,10)}
 function niverHoje(e){const n=niverNorm(e&&e.niver);const t=spDate();return !!n&&n===t.slice(8,10)+'/'+t.slice(5,7)}
 function niverBanner(me){
@@ -962,7 +969,7 @@ function viewPainel(){
 }
 
 // ---------- tela de folgas ----------
-function folEmps(storeSel){const L=[];STORES.forEach(st=>{if(storeSel!=='todas'&&st.id!==storeSel)return;((S.cfg[st.id]||{}).employees||[]).forEach(e=>L.push({st:st.id,e}))});return L.sort((a,b)=>a.e.name.localeCompare(b.e.name,'pt-BR'))}
+function folEmps(storeSel){const L=[];STORES.forEach(st=>{if(storeSel!=='todas'&&st.id!==storeSel)return;((S.cfg[st.id]||{}).employees||[]).filter(e=>!isGestorF(e)).forEach(e=>L.push({st:st.id,e}))});return L.sort((a,b)=>a.e.name.localeCompare(b.e.name,'pt-BR'))}
 function viewFolgas(){
   const F=S.fol;if(!F.month)F.month=S.keys.date.slice(0,7);const ym=F.month;const [y,m]=ym.split('-').map(Number);
   const weeks=semanasMes(ym);const doms=weeks.map(w=>addDays(w,6));const rows=folEmps(F.store);const doc=S.folgas[ym]||{};const dom=doc.dom||{};
@@ -1310,7 +1317,7 @@ function viewRodizio(){
   ${sortAreas(c.areas||[]).map(a=>`<tr><td>${diaNome(a.dia)}</td><td><b>${h(a.name)}</b>${a.prod?`<div class="small muted">${h(a.prod)}</div>`:''}</td>${weeks.map(w=>{const r=wk[a.id]||{};return `<td>${h(w.rot[a.id])}${w.o===0?'<br>'+(r.done?`<span class="chip ok">Limpo ${fmtWhen(r.at).slice(0,5)}${r.by&&r.by!==w.rot[a.id]?' por '+h(r.by):''}</span>`:estadoChip(a,r,s)):''}</td>`}).join('')}</tr>`).join('')}
   </tbody></table></div></section>`;
   // justiça: contagem por pessoa no período
-  const cnt={};(c.employees||[]).forEach(e=>cnt[e.name]=0);
+  const cnt={};(c.employees||[]).filter(e=>!isGestorF(e)).forEach(e=>cnt[e.name]=0);
   weeks.forEach(w=>{Object.values(w.rot).forEach(n=>{if(n in cnt)cnt[n]++})});
   out+=`<section class="panel"><div class="panel-h"><h2>Divisão no período (${weeks.length} semanas)</h2></div><div class="panel-b"><div class="kv">${Object.entries(cnt).map(([n,v])=>`<span>${h(n)}</span><span class="num chip">${v} limpezas</span>`).join('')}</div></div></section>`;
   return out+'</div>';
@@ -1466,7 +1473,7 @@ function viewConfig(){
   const secs=secs0(cur);const _unused=`${pick('accsec',cur,[['lojas','Lojas'],['equipe','Equipe e tarefas'],['itens','Itens e categorias'],['ideal','Quantidade por dia'],['producao','Produção diária'],['limpeza','Planilha de limpeza'],['acessos','Acessos e senhas']])}</div></section>`;
   if(cur==='acessos')return `<div class="stack">${secs}<section class="panel"><div class="panel-b"><div class="field"><span class="label">Loja (para os PINs)</span>${seg('cstore',s,STORES.map(x=>[x.id,x.short]))}</div></div></section>${viewAcessos()}</div>`;
   if(!S.edit||S.edit._store!==s){const c=S.cfg[s]||{turnos:['noite'],employees:[],tasks:[],items:[],areas:[]};S.edit=JSON.parse(JSON.stringify(c));S.edit._store=s;S.edit._src=S.cfg[s];S.dirty=false}
-  const fOpts=(cur,all)=>Object.entries(FUNCOES).filter(([k])=>all||(k!=='todos'&&k!=='lider')).map(([k,l])=>`<option value="${k}" ${cur===k?'selected':''}>${l}</option>`).join('');
+  const fOpts=(cur,all)=>Object.entries(FUNCOES).filter(([k])=>all==='area'?(k==='cozinha'||k==='atendimento'):all?k!=='gestor':(k!=='todos'&&k!=='lider')).map(([k,l])=>`<option value="${k}" ${cur===k?'selected':''}>${l}</option>`).join('');
   const E=S.edit;const tOpts=cur=>['todos',...(E.turnos||[])].map(t=>`<option value="${t}" ${cur===t?'selected':''}>${TURNOS[t]}</option>`).join('');
   const sec=(title,key,rowsHtml,addLabel,hint)=>`<section class="panel"><div class="panel-h"><h2>${title}</h2><button class="btn" data-act="cadd" data-v="${key}">${addLabel}</button></div><div class="panel-b">${hint?`<p class="small muted" style="margin:0 0 8px">${hint}</p>`:''}${rowsHtml||'<div class="muted small">Nenhum cadastrado.</div>'}</div></section>`;
   let out=`<div class="stack">${secs}<section class="panel savebar"><div class="panel-b"><div class="field"><span class="label">Loja</span>${seg('cstore',s,STORES.map(x=>[x.id,x.short]))}</div>
@@ -1517,7 +1524,7 @@ function viewConfig(){
   }
   if(cur==='limpeza'){
     out+=`<section class="panel"><div class="panel-b"><label style="display:flex;gap:10px;align-items:center;font-weight:700"><input type="checkbox" id="c-fotolimpeza" ${E.fotoLimpeza!==false?'checked':''} style="width:22px;height:22px"> Exigir foto nas limpezas semanais</label><p class="small muted" style="margin:6px 0 0">Ligado: para marcar uma limpeza como feita, o funcionário precisa tirar uma foto. Desligado: a foto é opcional.</p></div></section>`;
-    out+=sec('Planilha de limpeza (rodízio)','areas',(E.areas||[]).map((a,i)=>`<div class="edit-area"><div class="edit-row area1"><select data-c="areas" data-i="${i}" data-f="dia" aria-label="Dia">${[['','Qualquer dia'],...DIAS].map(([d,l])=>`<option value="${d}" ${String(a.dia??'')===String(d)?'selected':''}>${l}</option>`).join('')}</select><input type="text" id="c-areas-${i}-name" data-c="areas" data-i="${i}" data-f="name" value="${h(a.name)}" placeholder="Área ou equipamento" aria-label="Área"><select data-c="areas" data-i="${i}" data-f="turno" aria-label="Turno">${tOpts(a.turno||'todos')}</select><select data-c="areas" data-i="${i}" data-f="funcao" aria-label="Quem faz">${fOpts(fOf(a),false)}</select><button class="x" data-act="cdel" data-v="areas" data-i="${i}" aria-label="Remover">×</button></div>
+    out+=sec('Planilha de limpeza (rodízio)','areas',(E.areas||[]).map((a,i)=>`<div class="edit-area"><div class="edit-row area1"><select data-c="areas" data-i="${i}" data-f="dia" aria-label="Dia">${[['','Qualquer dia'],...DIAS].map(([d,l])=>`<option value="${d}" ${String(a.dia??'')===String(d)?'selected':''}>${l}</option>`).join('')}</select><input type="text" id="c-areas-${i}-name" data-c="areas" data-i="${i}" data-f="name" value="${h(a.name)}" placeholder="Área ou equipamento" aria-label="Área"><select data-c="areas" data-i="${i}" data-f="turno" aria-label="Turno">${tOpts(a.turno||'todos')}</select><select data-c="areas" data-i="${i}" data-f="funcao" aria-label="Quem faz">${fOpts(fOf(a),'area')}</select><button class="x" data-act="cdel" data-v="areas" data-i="${i}" aria-label="Remover">×</button></div>
   <div class="edit-row area2"><input type="text" id="c-areas-${i}-proc" data-c="areas" data-i="${i}" data-f="proc" value="${h(a.proc||'')}" placeholder="Procedimento" aria-label="Procedimento"><input type="text" id="c-areas-${i}-prod" data-c="areas" data-i="${i}" data-f="prod" value="${h(a.prod||'')}" placeholder="Produto" aria-label="Produto"><input type="text" id="c-areas-${i}-only" data-c="areas" data-i="${i}" data-f="only" value="${h(a.only||'')}" placeholder="Só para (nomes, opcional)" aria-label="Só para estas pessoas"><input type="text" id="c-areas-${i}-reserva" data-c="areas" data-i="${i}" data-f="reserva" value="${h(a.reserva||'')}" placeholder="Reserva se o titular folgar (nomes)" aria-label="Reserva"></div></div>`).join(''),'+ Área','Cada área tem um dia fixo e é da cozinha ou do atendimento. Toda segunda-feira o responsável muda sozinho, sempre equilibrando quantas limpezas cada um tem. Em "Só para" você limita a área a certas pessoas (ex.: coifa só para o chapeiro) e em "Reserva" diz quem faz quando o titular está de folga.');
   }
   if(S.dirty)out+=`<div class="dirtybar" role="status"><span>Há alterações não salvas</span><button class="btn primary" data-act="csave">Salvar alterações</button></div>`;
@@ -1536,6 +1543,7 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='modal'){e.targ
     if(f==='t'){pd.tem=stepVal(pd.tem,+v,'t');const cf=calcFazer(p,pd.tem);if(cf!=null){pd.fazer=cf;if(fi){fi.value=cf;fi.parentNode.classList.toggle('has',cf!=='')}}if(ti){ti.value=pd.tem;ti.parentNode.classList.toggle('has-tem',pd.tem!=='')}}
     else{pd.fazer=stepVal(pd.fazer,+v,'t');if(fi){fi.value=pd.fazer;fi.parentNode.classList.toggle('has',pd.fazer!=='')}}
     const st=S.store;clearTimeout(commitT[key]);commitT[key]=setTimeout(()=>commitProd(st,id),900);return}
+  if(a==='repodia'){S.repoAm=v==='1';Object.keys(S.pend).forEach(k=>{if(!k.includes('|prod|'))delete S.pend[k]});render();return}
   if(a==='pdone'){if(S.readOnly){toast('Seu acesso é só de visualização.');return}const p=prodList(S.store).find(x=>x.id===id);if(!p)return;const r=((S.day[S.store]||{}).prod||{})[id]||{};
     const key=S.store+'|prod|'+id;clearTimeout(commitT[key]);const pd=S.pend[key]||{};delete S.pend[key];
     const patch={ok:!r.ok};if(pd.tem!=null)patch.tem=String(pd.tem).trim();if(pd.fazer!=null)patch.fazer=String(pd.fazer).trim();markProd(S.store,p,patch);if(!r.ok)toast(p.name+' feito.');return}
@@ -1651,7 +1659,7 @@ document.addEventListener('change',e=>{
   if(t.dataset.act==='qty'){const c=S.cfg[S.store];const it=(c.items||[]).find(x=>x.id===t.dataset.id);if(!it)return;
     {const key=S.store+'|'+S.turno+'|'+it.id;clearTimeout(commitT[key]);delete S.pend[key]}
     if(S.readOnly){toast('Seu acesso é só de visualização.');return}
-    const cur=itemRec((S.day[S.store]||{}).items,it.id);
+    const cur=itemRec(repoDay(S.store).items,it.id);
     const te=document.getElementById('t-'+it.id),pe=document.getElementById('p-'+it.id);
     if(t.id==='t-'+it.id&&pe){const cp=calcPrec(it,t.value);if(cp!=null)pe.value=cp}
     const tem=(te?te.value:rTem(cur)).trim(),pr=(pe?pe.value:rPrec(cur)).trim();
@@ -1685,7 +1693,14 @@ async function saveCfg(okMsg){
   const src0=S.edit._src;delete S.edit._src;const E=JSON.parse(JSON.stringify(S.edit));S.edit._src=src0;const s=E._store;delete E._store;delete E._src;
   E.employees=(E.employees||[]).filter(x=>x.name.trim()).map(x=>({...x,name:x.name.trim(),niver:niverNorm(x.niver)}));
   E.tasks=(E.tasks||[]).filter(x=>x.title.trim());E.items=(E.items||[]).filter(x=>x.name.trim());E.categories=catList(E);E.producao=(E.producao||[]).filter(x=>(x.name||'').trim());E.areas=(E.areas||[]).filter(x=>x.name.trim());
+  E.employees=E.employees.map(x=>isGestorF(x)?Object.assign({},x,{turno:'todos',lider:false}):x);
   try{await S.db.doc('config/'+s).set(E);S.dirty=false;S.edit=null;toast(okMsg||'Configuração salva.');render()
+    const gs=E.employees.filter(isGestorF);const exIds=(E.exFunc||[]).map(x=>x.id);
+    for(const st of STORES){if(st.id===s)continue;const oc=S.cfg[st.id];if(!oc)continue;let mud=false;
+      let emps=(oc.employees||[]).map(o=>{const g=gs.find(x=>x.id===o.id);if(g&&JSON.stringify(g)!==JSON.stringify(o)){mud=true;return Object.assign({},g)}return o});
+      gs.forEach(g=>{if(!emps.some(o=>o.id===g.id)){emps.push(Object.assign({},g));mud=true}});
+      const antes=emps.length;emps=emps.filter(o=>!(isGestorF(o)&&exIds.includes(o.id)));if(emps.length!==antes)mud=true;
+      if(mud){try{await S.db.doc('config/'+st.id).update({employees:emps})}catch(e){}}}
     if(E.employees.some(e=>!e.pinHash&&pinNiver(e))){S.cfg[s]=E;pinsPorAniversario(true).then(r=>{if(r.n)toast(r.n===1?'PIN do aniversário criado para o funcionário novo.':r.n+' PINs criados pelo aniversário.')},()=>{})}}
   catch(err){toast('Não foi possível salvar. Só a gestora pode alterar a configuração.')}
 }
