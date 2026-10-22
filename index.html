@@ -693,9 +693,9 @@ function render(){
     const T=[['painel','Painel'],['checklist','Checklist'],['reposicao','Reposição'],['producao','Produção'],['historico','Histórico'],['relatorios','Relatórios'],['rodizio','Rodízio'],['folgas','Folgas'],['mensal','Controle mensal'],['imprimir','Imprimir'],['config','Configurar']];
     tabsEl.className='tabs tiles';tabsEl.innerHTML=T.map(tile).join('');
   }else{
-    const myE=(S.cfg[S.store]&&(S.cfg[S.store].employees||[]).find(e=>e.name===S.me))||{};const TT=[['checklist','Checklist']];if(temBS(S.store,S.turno,myE))TT.push(['banhsal','Banheiro e salão']);TT.push(['reposicao','Reposição']);if(fOf(myE)==='cozinha'&&prodHoje(S.store,S.turno).length)TT.push(['producao','Produção']);
+    const myE=(S.cfg[S.store]&&(S.cfg[S.store].employees||[]).find(e=>e.name===S.me))||{};const TT=[['checklist','Checklist']];if(temBS(S.store,S.turno,myE))TT.push(['banhsal','Banheiro e salão']);TT.push(['reposicao','Reposição']);if(prodList(S.store).some(p=>prodAtivo(p)))TT.push(['producao','Produção']);
     if(!TT.some(x=>x[0]===S.tab))S.tab='checklist';
-    tabsEl.className='tabs tiles '+(TT.length===2?'two':'three');tabsEl.innerHTML=TT.map(tile).join('');
+    tabsEl.className='tabs tiles '+(TT.length===3?'three':'two');tabsEl.innerHTML=TT.map(tile).join('');
   }
   tabsEl.hidden=false;
   const v=document.getElementById('view');
@@ -845,14 +845,15 @@ function pstepper(f,p,val,label,cls){return `<div class="stp"><span>${label}</sp
 function viewProducao(){
   const c=S.cfg[S.store];if(!c)return '<div class="empty">Esta loja ainda não foi configurada.</div>';
   let out=`<div class="stack">${setupPanel()}`;if(!meOk())return out+'</div>';
-  const list=prodHoje(S.store,S.turno).filter(p=>prodAtivo(p));const pr=(S.day[S.store]||{}).prod||{};
+  const ts=turnosHoje(S.store);const doisT=ts.length>1;const meuT=p=>mT(p.turno,S.turno,S.store)?0:1;
+  const list=prodList(S.store).filter(p=>prodAtivo(p)).sort((a,b)=>meuT(a)-meuT(b));const pr=(S.day[S.store]||{}).prod||{};
   const done=list.filter(p=>prodDone(p,pr[p.id])).length;
   out+=`<section class="panel"><div class="panel-h"><h2>Produção de hoje · ${diaNome(hojeDow())}</h2><div style="min-width:180px;flex:1;max-width:280px">${bar(done,list.length)}</div></div><div class="panel-b">
   <div class="howto"><div><b>Tem</b><span>quanto já tem pronto</span></div><div><b>Fazer</b><span>calcula sozinho: precisa ter menos o que tem</span></div></div>
   <p class="small muted" style="margin:0 0 8px">Anote quanto tem de cada item. Depois de produzir, toque no ✓ para marcar como feito.</p>`;
-  if(!list.length)out+='<div class="empty">Nenhum item de produção para hoje neste turno.</div>';
+  if(!list.length)out+='<div class="empty">Nenhum item de produção para hoje.</div>';
   out+=`<div class="rows">${list.map(p=>{const r=pr[p.id]||{};const pd=S.pend[S.store+'|prod|'+p.id]||{};const tem=pd.tem!=null?pd.tem:(r.tem||'');const faz=pd.fazer!=null?pd.fazer:(r.fazer||'');const ok=prodDone(p,r);const meta=prodMeta(p);const hasNum=numOf(meta)!=null;
-    return `<div class="row repo-row ${ok?'done':''}"><button class="check" data-act="pdone" data-id="${p.id}" aria-pressed="${ok}" aria-label="Marcar ${h(p.name)} como feito">${CHECK}</button><div class="txt"><div class="t">${h(p.name)}</div>
+    return `<div class="row repo-row ${ok?'done':''}"><button class="check" data-act="pdone" data-id="${p.id}" aria-pressed="${ok}" aria-label="Marcar ${h(p.name)} como feito">${CHECK}</button><div class="txt"><div class="t">${h(p.name)}${doisT&&p.turno&&p.turno!=='todos'?` <span class="chip ${meuT(p)?'':'me'}">${h(TURNOS[p.turno]||p.turno)}</span>`:''}</div>
       <div class="needbox"><span>Precisa ter hoje</span><b>${h(meta)}</b></div>${r.at?`<div class="meta">${ok?'Feito':'Anotado'} por ${h(r.by)} às ${fmtTime(r.at)}${r.peso?' · peso '+h(r.peso):''}</div>`:''}</div>
       ${hasNum?`<div class="pair">${pstepper('t',p,tem,'Tem','has-tem')}${pstepper('f',p,faz,'Fazer','has')}</div>`:''}</div>`}).join('')}</div>`;
   out+=`</div></section></div>`;return out;
