@@ -583,7 +583,7 @@ function subscribe(){
     const s=st.id;
     S.subs.push(S.db.doc('config/'+s).onSnapshot(snap=>{S.cfg[s]=snap.exists?snap.data():null;S.cfgLoaded=STORES.every(x=>x.id in S.cfg);applyAuth();fixSelections();render()},onErr));
     S.subs.push(S.db.doc('days/'+s+'_'+k.date).onSnapshot(snap=>{S.dayExists[s]=snap.exists;S.day[s]=snap.exists?snap.data():{};render()},onErr));
-    S.subs.push(S.db.doc('days/'+s+'_'+addDays(k.date,1)).onSnapshot(snap=>{S.dayAmExists[s]=snap.exists;S.dayAm[s]=snap.exists?snap.data():{};if(S.tab==='reposicao')render()},()=>{}));
+    S.subs.push(S.db.doc('days/'+s+'_'+addDays(k.date,1)).onSnapshot(snap=>{S.dayAmExists[s]=snap.exists;S.dayAm[s]=snap.exists?snap.data():{};if(S.tab==='reposicao'||S.tab==='producao')render()},()=>{}));
     S.subs.push(S.db.doc('weeks/'+s+'_'+k.week).onSnapshot(snap=>{S.weekExists[s]=snap.exists;S.week[s]=snap.exists?snap.data():{};render()},onErr));
   });
 }
@@ -829,7 +829,9 @@ function commitItem(store,turno,itemId){const key=store+'|'+turno+'|'+itemId;con
   const cur=itemRec(repoDay(store).items,itemId);
   if(pd.tem.trim()!==rTem(cur)||pd.pr.trim()!==rPrec(cur))markItem(store,turno,it,pd.tem.trim(),pd.pr.trim())}
 // ---------- produção ----------
-function prodMeta(p,date){const d=new Date((date||S.keys.date)+'T00:00:00Z').getUTCDay();const v=p.qtyDia&&p.qtyDia[d];return v!=null&&v!==''?String(v):''}
+function prodDate(){return S.prodAm?addDays(S.keys.date,1):S.keys.date}
+function prodDay(store){return (S.prodAm?S.dayAm[store]:S.day[store])||{}}
+function prodMeta(p,date){const d=new Date((date||(S.tab==='producao'?prodDate():S.keys.date))+'T00:00:00Z').getUTCDay();const v=p.qtyDia&&p.qtyDia[d];return v!=null&&v!==''?String(v):''}
 function prodList(store){const c=S.cfg[store];return (c&&c.producao)||[]}
 function prodHoje(store,turno){return prodList(store).filter(p=>!turno||mT(p.turno,turno,store))}
 function prodAtivo(p,date){const m=prodMeta(p,date);if(!m)return false;const n=numOf(m);return n==null||n>0}
@@ -840,31 +842,34 @@ function withNum(meta,n){const s=String(meta||'');const m=s.replace(',','.').mat
 function calcFazer(p,tem){const t=numOf(tem),m=numOf(prodMeta(p));if(t==null||m==null)return null;const f=Math.round((m-t)*100)/100;return f>0?String(f).replace('.',','):'0'}
 function fazerTxt(meta,fz){const n=numOf(fz);return n!=null&&numOf(meta)!=null?withNum(meta,n):String(fz||'')}
 function markProd(store,p,patch){
-  const k=S.keys;const cur=((S.day[store]||{}).prod||{})[p.id]||{};
-  const rec=Object.assign({tem:cur.tem||'',fazer:cur.fazer||'',ok:!!cur.ok,peso:cur.peso||''},patch,{id:p.id,by:S.me,at:new Date().toISOString(),name:p.name,meta:prodMeta(p)});
-  const path='days/'+store+'_'+k.date;
-  const d=S.day[store]=Object.assign({},S.day[store]||{});d.prod=Object.assign({},d.prod||{});d.prod[p.id]=rec;setTimeout(render,0);
-  write(path,S.dayExists[store],{store,date:k.date},{prod:{[p.id]:rec}});
+  const k=S.keys;const am=!!S.prodAm;const dt=am?addDays(k.date,1):k.date;const box=am?S.dayAm:S.day;const cur=((box[store]||{}).prod||{})[p.id]||{};
+  const rec=Object.assign({tem:cur.tem||'',fazer:cur.fazer||'',ok:!!cur.ok,peso:cur.peso||''},patch,{id:p.id,by:S.me,at:new Date().toISOString(),name:p.name,meta:prodMeta(p,dt)});if(am)rec.antes=true;
+  const path='days/'+store+'_'+dt;
+  const d=box[store]=Object.assign({},box[store]||{});d.prod=Object.assign({},d.prod||{});d.prod[p.id]=rec;setTimeout(render,0);
+  write(path,(am?S.dayAmExists:S.dayExists)[store],{store,date:dt},{prod:{[p.id]:rec}});
 }
 function pstepper(f,p,val,label,cls){return `<div class="stp"><span>${label}</span><div class="stp-box ${val!==''?cls:''}"><button data-act="pstep" data-f="${f}" data-id="${p.id}" data-v="-1" aria-label="Diminuir ${label.toLowerCase()} de ${h(p.name)}">${DOWN}</button><input type="text" inputmode="decimal" class="qty" id="p${f}-${p.id}" data-act="pqty" data-f="${f}" data-id="${p.id}" value="${h(val)}" aria-label="${label} de ${h(p.name)}" autocomplete="off"><button data-act="pstep" data-f="${f}" data-id="${p.id}" data-v="1" aria-label="Aumentar ${label.toLowerCase()} de ${h(p.name)}">${UP}</button></div></div>`}
 function viewProducao(){
   const c=S.cfg[S.store];if(!c)return '<div class="empty">Esta loja ainda não foi configurada.</div>';
   let out=`<div class="stack">${setupPanel()}`;if(!meOk())return out+'</div>';
   const ts=turnosHoje(S.store);const doisT=ts.length>1;const meuT=p=>mT(p.turno,S.turno,S.store)?0:1;
-  const list=prodList(S.store).filter(p=>prodAtivo(p)).sort((a,b)=>meuT(a)-meuT(b));const pr=(S.day[S.store]||{}).prod||{};
+  const am=!!S.prodAm;const dt=prodDate();const dDow=new Date(dt+'T00:00:00Z').getUTCDay();const amDow=new Date(addDays(S.keys.date,1)+'T00:00:00Z').getUTCDay();
+  const list=prodList(S.store).filter(p=>prodAtivo(p,dt)).sort((a,b)=>meuT(a)-meuT(b));const pr=prodDay(S.store).prod||{};
   const done=list.filter(p=>prodDone(p,pr[p.id])).length;
-  out+=`<section class="panel"><div class="panel-h"><h2>Produção de hoje · ${diaNome(hojeDow())}</h2><div style="min-width:180px;flex:1;max-width:280px">${bar(done,list.length)}</div></div><div class="panel-b">
+  out+=`<section class="panel"><div class="panel-h"><h2>Produção ${am?'de amanhã':'de hoje'} · ${diaNome(dDow)}</h2><div style="min-width:180px;flex:1;max-width:280px">${bar(done,list.length)}</div></div><div class="panel-b">
   <div class="howto"><div><b>Tem</b><span>quanto já tem pronto</span></div><div><b>Fazer</b><span>calcula sozinho: precisa ter menos o que tem</span></div></div>
+  <div class="field" style="margin-bottom:10px"><span class="label">Lista de</span>${seg('proddia',am?'1':'0',[['0','Hoje ('+diaNome(hojeDow()).slice(0,3)+')'],['1','Amanhã ('+diaNome(amDow).slice(0,3)+')']])}</div>
+  ${am?`<div class="notice" style="margin:0 0 10px">Você está anotando a produção de <b>amanhã, ${fmtDate(addDays(S.keys.date,1))}</b>. Quem chegar amanhã já encontra a lista com o que tem e o que fazer.</div>`:''}
   <p class="small muted" style="margin:0 0 8px">Anote quanto tem de cada item. Depois de produzir, toque no ✓ para marcar como feito.</p>`;
-  if(!list.length)out+='<div class="empty">Nenhum item de produção para hoje.</div>';
-  out+=`<div class="rows">${list.map(p=>{const r=pr[p.id]||{};const pd=S.pend[S.store+'|prod|'+p.id]||{};const tem=pd.tem!=null?pd.tem:(r.tem||'');const faz=pd.fazer!=null?pd.fazer:(r.fazer||'');const ok=prodDone(p,r);const meta=prodMeta(p);const hasNum=numOf(meta)!=null;
+  if(!list.length)out+=`<div class="empty">Nenhum item de produção para ${am?'amanhã':'hoje'}.</div>`;
+  out+=`<div class="rows">${list.map(p=>{const r=pr[p.id]||{};const pd=S.pend[S.store+'|prod|'+p.id]||{};const tem=pd.tem!=null?pd.tem:(r.tem||'');const faz=pd.fazer!=null?pd.fazer:(r.fazer||'');const ok=prodDone(p,r);const meta=prodMeta(p,dt);const hasNum=numOf(meta)!=null;
     return `<div class="row repo-row ${ok?'done':''}"><button class="check" data-act="pdone" data-id="${p.id}" aria-pressed="${ok}" aria-label="Marcar ${h(p.name)} como feito">${CHECK}</button><div class="txt"><div class="t">${h(p.name)}${doisT&&p.turno&&p.turno!=='todos'?` <span class="chip ${meuT(p)?'':'me'}">${h(TURNOS[p.turno]||p.turno)}</span>`:''}</div>
-      <div class="needbox"><span>Precisa ter hoje</span><b>${h(meta)}</b></div>${r.at?`<div class="meta">${ok?'Feito':'Anotado'} por ${h(r.by)} às ${fmtTime(r.at)}${r.peso?' · peso '+h(r.peso):''}</div>`:''}</div>
+      <div class="needbox"><span>Precisa ter ${am?'amanhã':'hoje'}</span><b>${h(meta)}</b></div>${r.at?`<div class="meta">${!am&&r.antes&&!ok?'🌙 Deixado na noite anterior por ':(ok?'Feito':'Anotado')+' por '}${h(r.by)} às ${fmtTime(r.at)}${r.peso?' · peso '+h(r.peso):''}</div>`:''}</div>
       ${hasNum?`<div class="pair">${pstepper('t',p,tem,'Tem','has-tem')}${pstepper('f',p,faz,'Fazer','has')}</div>`:''}</div>`}).join('')}</div>`;
   out+=`</div></section></div>`;return out;
 }
 function commitProd(store,id){const key=store+'|prod|'+id;const v=S.pend[key];delete S.pend[key];const p=prodList(store).find(x=>x.id===id);if(!p||!v)return;
-  const cur=((S.day[store]||{}).prod||{})[id]||{};const patch={};if(v.tem!=null&&String(v.tem).trim()!==String(cur.tem||''))patch.tem=String(v.tem).trim();if(v.fazer!=null&&String(v.fazer).trim()!==String(cur.fazer||''))patch.fazer=String(v.fazer).trim();
+  const cur=(prodDay(store).prod||{})[id]||{};const patch={};if(v.tem!=null&&String(v.tem).trim()!==String(cur.tem||''))patch.tem=String(v.tem).trim();if(v.fazer!=null&&String(v.fazer).trim()!==String(cur.fazer||''))patch.fazer=String(v.fazer).trim();
   if(Object.keys(patch).length)markProd(store,p,patch)}
 
 function norm(s){return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase()}
@@ -1543,8 +1548,9 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='modal'){e.targ
     if(f==='t'){pd.tem=stepVal(pd.tem,+v,'t');const cf=calcFazer(p,pd.tem);if(cf!=null){pd.fazer=cf;if(fi){fi.value=cf;fi.parentNode.classList.toggle('has',cf!=='')}}if(ti){ti.value=pd.tem;ti.parentNode.classList.toggle('has-tem',pd.tem!=='')}}
     else{pd.fazer=stepVal(pd.fazer,+v,'t');if(fi){fi.value=pd.fazer;fi.parentNode.classList.toggle('has',pd.fazer!=='')}}
     const st=S.store;clearTimeout(commitT[key]);commitT[key]=setTimeout(()=>commitProd(st,id),900);return}
+  if(a==='proddia'){S.prodAm=v==='1';Object.keys(S.pend).forEach(k=>{if(k.includes('|prod|'))delete S.pend[k]});render();return}
   if(a==='repodia'){S.repoAm=v==='1';Object.keys(S.pend).forEach(k=>{if(!k.includes('|prod|'))delete S.pend[k]});render();return}
-  if(a==='pdone'){if(S.readOnly){toast('Seu acesso é só de visualização.');return}const p=prodList(S.store).find(x=>x.id===id);if(!p)return;const r=((S.day[S.store]||{}).prod||{})[id]||{};
+  if(a==='pdone'){if(S.readOnly){toast('Seu acesso é só de visualização.');return}const p=prodList(S.store).find(x=>x.id===id);if(!p)return;const r=(prodDay(S.store).prod||{})[id]||{};
     const key=S.store+'|prod|'+id;clearTimeout(commitT[key]);const pd=S.pend[key]||{};delete S.pend[key];
     const patch={ok:!r.ok};if(pd.tem!=null)patch.tem=String(pd.tem).trim();if(pd.fazer!=null)patch.fazer=String(pd.fazer).trim();markProd(S.store,p,patch);if(!r.ok)toast(p.name+' feito.');return}
   if(a==='step'){if(S.readOnly){toast('Seu acesso é só de visualização.');return}
