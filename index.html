@@ -553,10 +553,16 @@ function sugerido(item,r){if(rPrec(r)!==''||!item)return null;const t=numOf(rTem
 function fmtN(n){return String(n).replace('.',',')}
 function itemRec(items,id){let best=null;Object.keys(items||{}).forEach(k=>{if(k.endsWith('__'+id)){const r=items[k];if(r&&(!best||String(r.at||'')>String(best.at||'')))best=r}});return best||{}}
 function itemsLatest(items){const m={};Object.values(items||{}).forEach(r=>{if(!r)return;const k=r.id||r.name;if(!m[k]||String(r.at||'')>String(m[k].at||''))m[k]=r});return Object.values(m)}
+function markSep(store,item,on){
+  const k=S.keys;const am=!!S.repoAm;const dt=am?addDays(k.date,1):k.date;const box=am?S.dayAm:S.day;const key='dia__'+item.id;
+  const cur=itemRec((box[store]||{}).items,item.id);const rec=Object.assign({},cur,{id:item.id,name:item.name,cat:item.cat||'',sep:!!on,sepBy:on?S.me:'',sepAt:on?new Date().toISOString():''});
+  const d=box[store]=Object.assign({},box[store]||{});d.items=Object.assign({},d.items||{});d.items[key]=rec;setTimeout(render,0);
+  write('days/'+store+'_'+dt,(am?S.dayAmExists:S.dayExists)[store],{store,date:dt},{items:{[key]:rec}});
+}
 function markItem(store,turno,item,tem,precisa){
   const k=S.keys;const key='dia__'+item.id;
   const rec={id:item.id,tem,precisa,by:S.me,at:new Date().toISOString(),name:item.name,cat:item.cat||'',turno};
-  const am=!!S.repoAm;const dt=am?addDays(k.date,1):k.date;if(am)rec.antes=true;
+  const am=!!S.repoAm;rec.sep=false;rec.sepBy='';rec.sepAt='';{const old=itemRec(((am?S.dayAm:S.day)[store]||{}).items,item.id);if(old.sep&&String(old.precisa||'')===String(precisa||'')){rec.sep=true;rec.sepBy=old.sepBy;rec.sepAt=old.sepAt}}const dt=am?addDays(k.date,1):k.date;rec.antes=am;
   const path='days/'+store+'_'+dt;const box=am?S.dayAm:S.day;
   const d=box[store]=Object.assign({},box[store]||{});d.items=Object.assign({},d.items||{});d.items[key]=rec;setTimeout(render,0);
   write(path,(am?S.dayAmExists:S.dayExists)[store],{store,date:dt},{items:{[key]:rec}});
@@ -843,7 +849,7 @@ function calcFazer(p,tem){const t=numOf(tem),m=numOf(prodMeta(p));if(t==null||m=
 function fazerTxt(meta,fz){const n=numOf(fz);return n!=null&&numOf(meta)!=null?withNum(meta,n):String(fz||'')}
 function markProd(store,p,patch){
   const k=S.keys;const am=!!S.prodAm;const dt=am?addDays(k.date,1):k.date;const box=am?S.dayAm:S.day;const cur=((box[store]||{}).prod||{})[p.id]||{};
-  const rec=Object.assign({tem:cur.tem||'',fazer:cur.fazer||'',ok:!!cur.ok,peso:cur.peso||''},patch,{id:p.id,by:S.me,at:new Date().toISOString(),name:p.name,meta:prodMeta(p,dt)});if(am)rec.antes=true;
+  const rec=Object.assign({tem:cur.tem||'',fazer:cur.fazer||'',ok:!!cur.ok,peso:cur.peso||''},patch,{id:p.id,by:S.me,at:new Date().toISOString(),name:p.name,meta:prodMeta(p,dt)});rec.antes=am;
   const path='days/'+store+'_'+dt;
   const d=box[store]=Object.assign({},box[store]||{});d.prod=Object.assign({},d.prod||{});d.prod[p.id]=rec;setTimeout(render,0);
   write(path,(am?S.dayAmExists:S.dayExists)[store],{store,date:dt},{prod:{[p.id]:rec}});
@@ -880,24 +886,26 @@ function viewRepo(){
   if(!meOk())return out+'</div>';
   const items=repoDay(S.store).items||{};
   const its=c.items||[];const am=!!S.repoAm;const amDow=new Date(addDays(S.keys.date,1)+'T00:00:00Z').getUTCDay();
-  const pedidos=its.filter(i=>hasRec(itemRec(items,i.id)));
+  const pedidos=its.filter(i=>hasRec(itemRec(items,i.id)));const aSep=its.filter(i=>rPrec(itemRec(items,i.id))!=='');const jaSep=aSep.filter(i=>itemRec(items,i.id).sep).length;
   out+=`<section class="panel"><div class="panel-h"><h2>Lista de reposição${am?' · para amanhã':''}</h2><span class="chip ${pedidos.length?'me':''} num">${pedidos.length} ${pedidos.length===1?'item anotado':'itens anotados'}</span></div><div class="panel-b">
   <div class="howto"><div><b>Tem</b><span>quanto tem na loja agora</span></div><div><b>Precisa</b><span>quanto pedir ao estoque</span></div></div>
   <p class="small muted" style="margin:0 0 10px">Use as setas ou digite (ex.: 4, 5 potes, 2 cx). Anote quanto <b>tem</b>: quando o item tem quantidade ideal do dia, o <b>precisa</b> é calculado sozinho e você pode ajustar. Salva sozinho.</p>
   <div class="field" style="margin-bottom:10px"><span class="label">Lista de</span>${seg('repodia',am?'1':'0',[['0','Hoje ('+diaNome(hojeDow()).slice(0,3)+')'],['1','Amanhã ('+diaNome(amDow).slice(0,3)+')']])}</div>
   ${am?`<div class="notice" style="margin:0 0 10px">Você está anotando para <b>amanhã, ${fmtDate(addDays(S.keys.date,1))}</b>. Quem chegar amanhã já encontra esta lista pronta na aba Reposição.</div>`:''}
   <input type="text" id="repo-q" data-act="repoq" placeholder="Buscar item…" value="${h(S.repoQ)}" aria-label="Buscar item" autocomplete="off">
-  ${pedidos.length?`<div style="margin-top:12px" id="repo-sum"><div class="label" style="margin-bottom:6px">${am?'Já anotado para amanhã':'Já anotado hoje (todos os turnos)'}</div><div class="list-inline">${pedidos.map(i=>{const r=itemRec(items,i.id);return `<span class="chip me" title="${h(r.by)} · ${fmtTime(r.at)}">${!am&&r.antes?'🌙 ':''}${h(i.name)}: ${rTem(r)!==''?'tem '+h(rTem(r)):''}${rTem(r)!==''&&rPrec(r)!==''?' · ':''}${rPrec(r)!==''?'precisa '+h(rPrec(r)):''}</span>`}).join('')}</div></div>`:''}`;
-  const cats=catList(c).filter(x=>its.some(i=>(i.cat||'Outros')===x));
+  ${pedidos.length?`<div style="margin-top:12px" id="repo-sum"><div class="label" style="margin-bottom:6px">${am?'Já anotado para amanhã':'Já anotado hoje (todos os turnos)'}</div><div class="list-inline">${pedidos.map(i=>{const r=itemRec(items,i.id);return `<span class="chip ${r.sep?'ok':'me'}" title="${h(r.by)} · ${fmtTime(r.at)}">${r.sep?'✓ ':''}${!am&&r.antes?'🌙 ':''}${h(i.name)}: ${rTem(r)!==''?'tem '+h(rTem(r)):''}${rTem(r)!==''&&rPrec(r)!==''?' · ':''}${rPrec(r)!==''?'precisa '+h(rPrec(r)):''}</span>`}).join('')}</div></div>`:''}`;
+  if(aSep.length)out+=`<div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div class="label" style="margin-bottom:4px">Separado do estoque</div>${bar(jaSep,aSep.length)}</div><button class="btn ${S.repoSoSep?'primary':''}" data-act="reposo">${S.repoSoSep?'Mostrar todos os itens':'Ver só o que precisa separar'}</button></div>`;
+  const cats=catList(c).filter(x=>its.some(i=>(i.cat||'Outros')===x&&(!S.repoSoSep||rPrec(itemRec(items,i.id))!=='')));
   const anot=cat=>its.filter(i=>(i.cat||'Outros')===cat&&hasRec(itemRec(items,i.id))).length;
   out+=`<div class="catbar" role="group" aria-label="Categorias"><button data-act="repocat" data-v="" aria-pressed="${!S.repoCat}">Todas</button>${cats.map(cat=>{const n=anot(cat);return `<button data-act="repocat" data-v="${h(cat)}" aria-pressed="${S.repoCat===cat}">${h(cat)}${n?` <b>${n}</b>`:''}</button>`}).join('')}</div>`;
   let shown=0;
   cats.forEach(cat=>{
-    const list=its.filter(i=>(i.cat||'Outros')===cat);if(!list.length)return;const n=anot(cat);
+    const list=its.filter(i=>(i.cat||'Outros')===cat&&(!S.repoSoSep||rPrec(itemRec(items,i.id))!==''));if(!list.length)return;const n=anot(cat);
     out+=`<div class="repo-cat" data-c="${h(cat)}"><div class="cat-h"><span>${h(cat)}</span><span class="cat-n">${n?n+' anotado'+(n>1?'s':'')+' · ':''}${list.length} ${list.length===1?'item':'itens'}</span></div><div class="rows">`;
     list.forEach(i=>{shown++;
       const r=itemRec(items,i.id);const pd=S.pend[S.store+'|'+S.turno+'|'+i.id];const tem=pd?pd.tem:rTem(r),pr=pd?pd.pr:rPrec(r);
-      out+=`<div class="row repo-row" data-n="${h(norm(i.name))}"><div class="txt"><div class="t">${h(i.name)}</div>${idealHoje(i)?`<div class="needbox"><span>Precisa ter ${am?'amanhã':'hoje'}</span><b>${h(idealHoje(i))}</b></div>`:''}${r.at&&hasRec(r)?`<div class="meta">${!am&&r.antes?'🌙 Deixado na noite anterior por ':'Anotado por '}${h(r.by)}${r.turno&&turnosOf(S.store).length>1&&TURNOS[r.turno]?' ('+TURNOS[r.turno].toLowerCase()+')':''} às ${fmtTime(r.at)}</div>`:''}</div>
+      const temPrec=rPrec(r)!=='';
+      out+=`<div class="row repo-row ${r.sep&&temPrec?'done':''}" data-n="${h(norm(i.name))}">${temPrec?`<button class="check" data-act="rsep" data-id="${i.id}" aria-pressed="${!!r.sep}" aria-label="Marcar ${h(i.name)} como separado">${CHECK}</button>`:''}<div class="txt"><div class="t">${h(i.name)}</div>${idealHoje(i)?`<div class="needbox"><span>Precisa ter ${am?'amanhã':'hoje'}</span><b>${h(idealHoje(i))}</b></div>`:''}${r.at&&hasRec(r)?`<div class="meta">${!am&&r.antes?'🌙 Deixado na noite anterior por ':'Anotado por '}${h(r.by)}${r.turno&&turnosOf(S.store).length>1&&TURNOS[r.turno]?' ('+TURNOS[r.turno].toLowerCase()+')':''} às ${fmtTime(r.at)}</div>`:''}${r.sep&&temPrec?`<div class="meta" style="color:var(--erva-text);font-weight:700">✓ Separado por ${h(r.sepBy)} às ${fmtTime(r.sepAt)}</div>`:''}</div>
       <div class="pair">${stepper('t',i,tem,'Tem','has-tem','Quanto tem de ')}${stepper('p',i,pr,'Precisa','has','Quanto precisa de ')}</div></div>`;
     });
     out+=`</div></div>`;
@@ -1548,6 +1556,8 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='modal'){e.targ
     if(f==='t'){pd.tem=stepVal(pd.tem,+v,'t');const cf=calcFazer(p,pd.tem);if(cf!=null){pd.fazer=cf;if(fi){fi.value=cf;fi.parentNode.classList.toggle('has',cf!=='')}}if(ti){ti.value=pd.tem;ti.parentNode.classList.toggle('has-tem',pd.tem!=='')}}
     else{pd.fazer=stepVal(pd.fazer,+v,'t');if(fi){fi.value=pd.fazer;fi.parentNode.classList.toggle('has',pd.fazer!=='')}}
     const st=S.store;clearTimeout(commitT[key]);commitT[key]=setTimeout(()=>commitProd(st,id),900);return}
+  if(a==='rsep'){if(S.readOnly){toast('Seu acesso é só de visualização.');return}const it=(c.items||[]).find(x=>x.id===id);if(!it)return;const r=itemRec(repoDay(S.store).items,id);markSep(S.store,it,!r.sep);if(!r.sep)toast(it.name+' separado.');return}
+  if(a==='reposo'){S.repoSoSep=!S.repoSoSep;render();return}
   if(a==='proddia'){S.prodAm=v==='1';Object.keys(S.pend).forEach(k=>{if(k.includes('|prod|'))delete S.pend[k]});render();return}
   if(a==='repodia'){S.repoAm=v==='1';Object.keys(S.pend).forEach(k=>{if(!k.includes('|prod|'))delete S.pend[k]});render();return}
   if(a==='pdone'){if(S.readOnly){toast('Seu acesso é só de visualização.');return}const p=prodList(S.store).find(x=>x.id===id);if(!p)return;const r=(prodDay(S.store).prod||{})[id]||{};
