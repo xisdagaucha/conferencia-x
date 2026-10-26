@@ -338,6 +338,8 @@ table.folg tfoot td{border-top:2px solid var(--line)}
 @media (prefers-reduced-motion:no-preference){.bar i{transition:width .3s ease}}
 .dirtybar{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:40;display:flex;gap:12px;align-items:center;background:#0e100e;color:#fff;padding:10px 12px 10px 18px;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.3);font-weight:700;max-width:calc(100% - 32px)}
 @media print{.dirtybar{display:none}}
+.chipbtn{cursor:pointer;font:inherit;font-size:12.5px;font-weight:700;border:1px solid transparent;min-height:34px}
+.chipbtn.ok{background:var(--erva);color:var(--erva-ink);border-color:var(--erva)}
 </style>
 
 <header class="brandbar"><div class="wrap">
@@ -545,7 +547,13 @@ function numOf(v){const m=String(v==null?'':v).replace(',','.').match(/-?\d+(\.\
 function rTem(r){return r&&r.tem!=null?String(r.tem):''}
 function rPrec(r){return r&&r.precisa!=null?String(r.precisa):(r&&r.qty!=null?String(r.qty):'')}
 function hasRec(r){return rTem(r)!==''||rPrec(r)!==''}
-function repoDate(){return S.repoAm?addDays(S.keys.date,1):S.keys.date}
+// próximo dia aberto: segunda a loja fecha, então de domingo vai direto para terça
+function proxDia(d){let x=addDays(d,1);if(new Date(x+'T00:00:00Z').getUTCDay()===1)x=addDays(x,1);return x}
+function proxEhAmanha(){return proxDia(S.keys.date)===addDays(S.keys.date,1)}
+function proxNome(){const x=proxDia(S.keys.date);return proxEhAmanha()?'amanhã':diaNome(new Date(x+'T00:00:00Z').getUTCDay()).toLowerCase()}
+function proxBtn(){const x=proxDia(S.keys.date);const dn=diaNome(new Date(x+'T00:00:00Z').getUTCDay());return proxEhAmanha()?'Amanhã ('+dn.slice(0,3)+')':dn+' (segunda fechado)'}
+function deixadoTxt(r){const d=r&&r.at?bizDate(Date.parse(r.at)):'';const dw=d?new Date(d+'T00:00:00Z').getUTCDay():-1;return d&&d!==addDays(S.keys.date,-1)&&dw===0?'🌙 Deixado no domingo por ':'🌙 Deixado na noite anterior por '}
+function repoDate(){return S.repoAm?proxDia(S.keys.date):S.keys.date}
 function repoDay(store){return (S.repoAm?S.dayAm[store]:S.day[store])||{}}
 function idealHoje(item){if(!item)return '';const d=new Date((S.tab==='reposicao'?repoDate():S.keys.date)+'T00:00:00Z').getUTCDay();const v=item.idealDia&&item.idealDia[d];return v!=null&&v!==''?String(v):(item.ideal!=null?String(item.ideal):'')}
 function calcPrec(item,tem){const t=numOf(tem),i=numOf(idealHoje(item));if(t==null||i==null)return null;const p=Math.round((i-t)*100)/100;return p>0?String(p).replace('.',','):''}
@@ -554,7 +562,7 @@ function fmtN(n){return String(n).replace('.',',')}
 function itemRec(items,id){let best=null;Object.keys(items||{}).forEach(k=>{if(k.endsWith('__'+id)){const r=items[k];if(r&&(!best||String(r.at||'')>String(best.at||'')))best=r}});return best||{}}
 function itemsLatest(items){const m={};Object.values(items||{}).forEach(r=>{if(!r)return;const k=r.id||r.name;if(!m[k]||String(r.at||'')>String(m[k].at||''))m[k]=r});return Object.values(m)}
 function markSep(store,item,on){
-  const k=S.keys;const am=!!S.repoAm;const dt=am?addDays(k.date,1):k.date;const box=am?S.dayAm:S.day;const key='dia__'+item.id;
+  const k=S.keys;const am=!!S.repoAm;const dt=am?proxDia(k.date):k.date;const box=am?S.dayAm:S.day;const key='dia__'+item.id;
   const cur=itemRec((box[store]||{}).items,item.id);const rec=Object.assign({},cur,{id:item.id,name:item.name,cat:item.cat||'',sep:!!on,sepBy:on?S.me:'',sepAt:on?new Date().toISOString():''});
   const d=box[store]=Object.assign({},box[store]||{});d.items=Object.assign({},d.items||{});d.items[key]=rec;setTimeout(render,0);
   write('days/'+store+'_'+dt,(am?S.dayAmExists:S.dayExists)[store],{store,date:dt},{items:{[key]:rec}});
@@ -562,7 +570,7 @@ function markSep(store,item,on){
 function markItem(store,turno,item,tem,precisa){
   const k=S.keys;const key='dia__'+item.id;
   const rec={id:item.id,tem,precisa,by:S.me,at:new Date().toISOString(),name:item.name,cat:item.cat||'',turno};
-  const am=!!S.repoAm;rec.sep=false;rec.sepBy='';rec.sepAt='';{const old=itemRec(((am?S.dayAm:S.day)[store]||{}).items,item.id);if(old.sep&&String(old.precisa||'')===String(precisa||'')){rec.sep=true;rec.sepBy=old.sepBy;rec.sepAt=old.sepAt}}const dt=am?addDays(k.date,1):k.date;rec.antes=am;
+  const am=!!S.repoAm;rec.sep=false;rec.sepBy='';rec.sepAt='';{const old=itemRec(((am?S.dayAm:S.day)[store]||{}).items,item.id);if(old.sep&&String(old.precisa||'')===String(precisa||'')){rec.sep=true;rec.sepBy=old.sepBy;rec.sepAt=old.sepAt}}const dt=am?proxDia(k.date):k.date;rec.antes=am;
   const path='days/'+store+'_'+dt;const box=am?S.dayAm:S.day;
   const d=box[store]=Object.assign({},box[store]||{});d.items=Object.assign({},d.items||{});d.items[key]=rec;setTimeout(render,0);
   write(path,(am?S.dayAmExists:S.dayExists)[store],{store,date:dt},{items:{[key]:rec}});
@@ -589,7 +597,7 @@ function subscribe(){
     const s=st.id;
     S.subs.push(S.db.doc('config/'+s).onSnapshot(snap=>{S.cfg[s]=snap.exists?snap.data():null;S.cfgLoaded=STORES.every(x=>x.id in S.cfg);applyAuth();fixSelections();render()},onErr));
     S.subs.push(S.db.doc('days/'+s+'_'+k.date).onSnapshot(snap=>{S.dayExists[s]=snap.exists;S.day[s]=snap.exists?snap.data():{};render()},onErr));
-    S.subs.push(S.db.doc('days/'+s+'_'+addDays(k.date,1)).onSnapshot(snap=>{S.dayAmExists[s]=snap.exists;S.dayAm[s]=snap.exists?snap.data():{};if(S.tab==='reposicao'||S.tab==='producao')render()},()=>{}));
+    S.subs.push(S.db.doc('days/'+s+'_'+proxDia(k.date)).onSnapshot(snap=>{S.dayAmExists[s]=snap.exists;S.dayAm[s]=snap.exists?snap.data():{};if(S.tab==='reposicao'||S.tab==='producao')render()},()=>{}));
     S.subs.push(S.db.doc('weeks/'+s+'_'+k.week).onSnapshot(snap=>{S.weekExists[s]=snap.exists;S.week[s]=snap.exists?snap.data():{};render()},onErr));
   });
 }
@@ -835,7 +843,7 @@ function commitItem(store,turno,itemId){const key=store+'|'+turno+'|'+itemId;con
   const cur=itemRec(repoDay(store).items,itemId);
   if(pd.tem.trim()!==rTem(cur)||pd.pr.trim()!==rPrec(cur))markItem(store,turno,it,pd.tem.trim(),pd.pr.trim())}
 // ---------- produção ----------
-function prodDate(){return S.prodAm?addDays(S.keys.date,1):S.keys.date}
+function prodDate(){return S.prodAm?proxDia(S.keys.date):S.keys.date}
 function prodDay(store){return (S.prodAm?S.dayAm[store]:S.day[store])||{}}
 function prodMeta(p,date){const d=new Date((date||(S.tab==='producao'?prodDate():S.keys.date))+'T00:00:00Z').getUTCDay();const v=p.qtyDia&&p.qtyDia[d];return v!=null&&v!==''?String(v):''}
 function prodList(store){const c=S.cfg[store];return (c&&c.producao)||[]}
@@ -848,7 +856,7 @@ function withNum(meta,n){const s=String(meta||'');const m=s.replace(',','.').mat
 function calcFazer(p,tem){const t=numOf(tem),m=numOf(prodMeta(p));if(t==null||m==null)return null;const f=Math.round((m-t)*100)/100;return f>0?String(f).replace('.',','):'0'}
 function fazerTxt(meta,fz){const n=numOf(fz);return n!=null&&numOf(meta)!=null?withNum(meta,n):String(fz||'')}
 function markProd(store,p,patch){
-  const k=S.keys;const am=!!S.prodAm;const dt=am?addDays(k.date,1):k.date;const box=am?S.dayAm:S.day;const cur=((box[store]||{}).prod||{})[p.id]||{};
+  const k=S.keys;const am=!!S.prodAm;const dt=am?proxDia(k.date):k.date;const box=am?S.dayAm:S.day;const cur=((box[store]||{}).prod||{})[p.id]||{};
   const rec=Object.assign({tem:cur.tem||'',fazer:cur.fazer||'',ok:!!cur.ok,peso:cur.peso||''},patch,{id:p.id,by:S.me,at:new Date().toISOString(),name:p.name,meta:prodMeta(p,dt)});rec.antes=am;
   const path='days/'+store+'_'+dt;
   const d=box[store]=Object.assign({},box[store]||{});d.prod=Object.assign({},d.prod||{});d.prod[p.id]=rec;setTimeout(render,0);
@@ -859,18 +867,18 @@ function viewProducao(){
   const c=S.cfg[S.store];if(!c)return '<div class="empty">Esta loja ainda não foi configurada.</div>';
   let out=`<div class="stack">${setupPanel()}`;if(!meOk())return out+'</div>';
   const ts=turnosHoje(S.store);const doisT=ts.length>1;const meuT=p=>mT(p.turno,S.turno,S.store)?0:1;
-  const am=!!S.prodAm;const dt=prodDate();const dDow=new Date(dt+'T00:00:00Z').getUTCDay();const amDow=new Date(addDays(S.keys.date,1)+'T00:00:00Z').getUTCDay();
+  const am=!!S.prodAm;const dt=prodDate();const dDow=new Date(dt+'T00:00:00Z').getUTCDay();const amDow=new Date(proxDia(S.keys.date)+'T00:00:00Z').getUTCDay();
   const list=prodList(S.store).filter(p=>prodAtivo(p,dt)).sort((a,b)=>meuT(a)-meuT(b));const pr=prodDay(S.store).prod||{};
   const done=list.filter(p=>prodDone(p,pr[p.id])).length;
-  out+=`<section class="panel"><div class="panel-h"><h2>Produção ${am?'de amanhã':'de hoje'} · ${diaNome(dDow)}</h2><div style="min-width:180px;flex:1;max-width:280px">${bar(done,list.length)}</div></div><div class="panel-b">
+  out+=`<section class="panel"><div class="panel-h"><h2>Produção ${am?'de '+proxNome():'de hoje'}${!am||proxEhAmanha()?' · '+diaNome(dDow):''}</h2><div style="min-width:180px;flex:1;max-width:280px">${bar(done,list.length)}</div></div><div class="panel-b">
   <div class="howto"><div><b>Tem</b><span>quanto já tem pronto</span></div><div><b>Fazer</b><span>calcula sozinho: precisa ter menos o que tem</span></div></div>
-  <div class="field" style="margin-bottom:10px"><span class="label">Lista de</span>${seg('proddia',am?'1':'0',[['0','Hoje ('+diaNome(hojeDow()).slice(0,3)+')'],['1','Amanhã ('+diaNome(amDow).slice(0,3)+')']])}</div>
-  ${am?`<div class="notice" style="margin:0 0 10px">Você está anotando a produção de <b>amanhã, ${fmtDate(addDays(S.keys.date,1))}</b>. Quem chegar amanhã já encontra a lista com o que tem e o que fazer.</div>`:''}
+  <div class="field" style="margin-bottom:10px"><span class="label">Lista de</span>${seg('proddia',am?'1':'0',[['0','Hoje ('+diaNome(hojeDow()).slice(0,3)+')'],['1',proxBtn()]])}</div>
+  ${am?`<div class="notice" style="margin:0 0 10px">Você está anotando a produção de <b>${proxNome()}, ${fmtDate(proxDia(S.keys.date))}</b>. Quem chegar ${proxNome()} já encontra a lista com o que tem e o que fazer.</div>`:''}
   <p class="small muted" style="margin:0 0 8px">Anote quanto tem de cada item. Depois de produzir, toque no ✓ para marcar como feito.</p>`;
-  if(!list.length)out+=`<div class="empty">Nenhum item de produção para ${am?'amanhã':'hoje'}.</div>`;
+  if(!list.length)out+=`<div class="empty">Nenhum item de produção para ${am?proxNome():'hoje'}.</div>`;
   out+=`<div class="rows">${list.map(p=>{const r=pr[p.id]||{};const pd=S.pend[S.store+'|prod|'+p.id]||{};const tem=pd.tem!=null?pd.tem:(r.tem||'');const faz=pd.fazer!=null?pd.fazer:(r.fazer||'');const ok=prodDone(p,r);const meta=prodMeta(p,dt);const hasNum=numOf(meta)!=null;
     return `<div class="row repo-row ${ok?'done':''}"><button class="check" data-act="pdone" data-id="${p.id}" aria-pressed="${ok}" aria-label="Marcar ${h(p.name)} como feito">${CHECK}</button><div class="txt"><div class="t">${h(p.name)}${doisT&&p.turno&&p.turno!=='todos'?` <span class="chip ${meuT(p)?'':'me'}">${h(TURNOS[p.turno]||p.turno)}</span>`:''}</div>
-      <div class="needbox"><span>Precisa ter ${am?'amanhã':'hoje'}</span><b>${h(meta)}</b></div>${r.at?`<div class="meta">${!am&&r.antes&&!ok?'🌙 Deixado na noite anterior por ':(ok?'Feito':'Anotado')+' por '}${h(r.by)} às ${fmtTime(r.at)}${r.peso?' · peso '+h(r.peso):''}</div>`:''}</div>
+      <div class="needbox"><span>Precisa ter ${am?proxNome():'hoje'}</span><b>${h(meta)}</b></div>${r.at?`<div class="meta">${!am&&r.antes&&!ok?deixadoTxt(r):(ok?'Feito':'Anotado')+' por '}${h(r.by)} às ${fmtTime(r.at)}${r.peso?' · peso '+h(r.peso):''}</div>`:''}</div>
       ${hasNum?`<div class="pair">${pstepper('t',p,tem,'Tem','has-tem')}${pstepper('f',p,faz,'Fazer','has')}</div>`:''}</div>`}).join('')}</div>`;
   out+=`</div></section></div>`;return out;
 }
@@ -885,15 +893,16 @@ function viewRepo(){
   let out=`<div class="stack">${setupPanel()}`;
   if(!meOk())return out+'</div>';
   const items=repoDay(S.store).items||{};
-  const its=c.items||[];const am=!!S.repoAm;const amDow=new Date(addDays(S.keys.date,1)+'T00:00:00Z').getUTCDay();
+  const its=c.items||[];const am=!!S.repoAm;const amDow=new Date(proxDia(S.keys.date)+'T00:00:00Z').getUTCDay();
   const pedidos=its.filter(i=>hasRec(itemRec(items,i.id)));const aSep=its.filter(i=>rPrec(itemRec(items,i.id))!=='');const jaSep=aSep.filter(i=>itemRec(items,i.id).sep).length;
-  out+=`<section class="panel"><div class="panel-h"><h2>Lista de reposição${am?' · para amanhã':''}</h2><span class="chip ${pedidos.length?'me':''} num">${pedidos.length} ${pedidos.length===1?'item anotado':'itens anotados'}</span></div><div class="panel-b">
+  out+=`<section class="panel"><div class="panel-h"><h2>Lista de reposição${am?' · para '+proxNome():''}</h2><span class="chip ${pedidos.length?'me':''} num">${pedidos.length} ${pedidos.length===1?'item anotado':'itens anotados'}</span></div><div class="panel-b">
   <div class="howto"><div><b>Tem</b><span>quanto tem na loja agora</span></div><div><b>Precisa</b><span>quanto pedir ao estoque</span></div></div>
   <p class="small muted" style="margin:0 0 10px">Use as setas ou digite (ex.: 4, 5 potes, 2 cx). Anote quanto <b>tem</b>: quando o item tem quantidade ideal do dia, o <b>precisa</b> é calculado sozinho e você pode ajustar. Salva sozinho.</p>
-  <div class="field" style="margin-bottom:10px"><span class="label">Lista de</span>${seg('repodia',am?'1':'0',[['0','Hoje ('+diaNome(hojeDow()).slice(0,3)+')'],['1','Amanhã ('+diaNome(amDow).slice(0,3)+')']])}</div>
-  ${am?`<div class="notice" style="margin:0 0 10px">Você está anotando para <b>amanhã, ${fmtDate(addDays(S.keys.date,1))}</b>. Quem chegar amanhã já encontra esta lista pronta na aba Reposição.</div>`:''}
+  <div class="field" style="margin-bottom:10px"><span class="label">Lista de</span>${seg('repodia',am?'1':'0',[['0','Hoje ('+diaNome(hojeDow()).slice(0,3)+')'],['1',proxBtn()]])}</div>
+  ${am?`<div class="notice" style="margin:0 0 10px">Você está anotando para <b>${proxNome()}, ${fmtDate(proxDia(S.keys.date))}</b>. Quem chegar ${proxNome()} já encontra esta lista pronta na aba Reposição.</div>`:''}
   <input type="text" id="repo-q" data-act="repoq" placeholder="Buscar item…" value="${h(S.repoQ)}" aria-label="Buscar item" autocomplete="off">
-  ${pedidos.length?`<div style="margin-top:12px" id="repo-sum"><div class="label" style="margin-bottom:6px">${am?'Já anotado para amanhã':'Já anotado hoje (todos os turnos)'}</div><div class="list-inline">${pedidos.map(i=>{const r=itemRec(items,i.id);return `<span class="chip ${r.sep?'ok':'me'}" title="${h(r.by)} · ${fmtTime(r.at)}">${r.sep?'✓ ':''}${!am&&r.antes?'🌙 ':''}${h(i.name)}: ${rTem(r)!==''?'tem '+h(rTem(r)):''}${rTem(r)!==''&&rPrec(r)!==''?' · ':''}${rPrec(r)!==''?'precisa '+h(rPrec(r)):''}</span>`}).join('')}</div></div>`:''}`;
+  ${pedidos.length?`<div style="margin-top:12px" id="repo-sum"><div class="label" style="margin-bottom:6px">${am?'Já anotado para '+proxNome():'Já anotado hoje (todos os turnos)'}</div><div class="list-inline">${pedidos.map(i=>{const r=itemRec(items,i.id);const txt=`${r.sep?'✓ ':''}${!am&&r.antes?'🌙 ':''}${h(i.name)}: ${rTem(r)!==''?'tem '+h(rTem(r)):''}${rTem(r)!==''&&rPrec(r)!==''?' · ':''}${rPrec(r)!==''?'precisa '+h(rPrec(r)):''}`;
+    return rPrec(r)!==''?`<button class="chip chipbtn ${r.sep?'ok':'me'}" data-act="rsep" data-id="${i.id}" aria-pressed="${!!r.sep}" title="${r.sep?'Separado por '+h(r.sepBy)+' às '+fmtTime(r.sepAt)+' · toque para desfazer':'Toque quando separar'}">${txt}</button>`:`<span class="chip me" title="${h(r.by)} · ${fmtTime(r.at)}">${txt}</span>`}).join('')}</div><p class="small muted" style="margin:6px 0 0">Toque no item quando separar: ele fica verde. Toque de novo para desfazer.</p><div></div></div>`:''}`;
   if(aSep.length)out+=`<div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div class="label" style="margin-bottom:4px">Separado do estoque</div>${bar(jaSep,aSep.length)}</div><button class="btn ${S.repoSoSep?'primary':''}" data-act="reposo">${S.repoSoSep?'Mostrar todos os itens':'Ver só o que precisa separar'}</button></div>`;
   const cats=catList(c).filter(x=>its.some(i=>(i.cat||'Outros')===x&&(!S.repoSoSep||rPrec(itemRec(items,i.id))!=='')));
   const anot=cat=>its.filter(i=>(i.cat||'Outros')===cat&&hasRec(itemRec(items,i.id))).length;
@@ -905,7 +914,7 @@ function viewRepo(){
     list.forEach(i=>{shown++;
       const r=itemRec(items,i.id);const pd=S.pend[S.store+'|'+S.turno+'|'+i.id];const tem=pd?pd.tem:rTem(r),pr=pd?pd.pr:rPrec(r);
       const temPrec=rPrec(r)!=='';
-      out+=`<div class="row repo-row ${r.sep&&temPrec?'done':''}" data-n="${h(norm(i.name))}">${temPrec?`<button class="check" data-act="rsep" data-id="${i.id}" aria-pressed="${!!r.sep}" aria-label="Marcar ${h(i.name)} como separado">${CHECK}</button>`:''}<div class="txt"><div class="t">${h(i.name)}</div>${idealHoje(i)?`<div class="needbox"><span>Precisa ter ${am?'amanhã':'hoje'}</span><b>${h(idealHoje(i))}</b></div>`:''}${r.at&&hasRec(r)?`<div class="meta">${!am&&r.antes?'🌙 Deixado na noite anterior por ':'Anotado por '}${h(r.by)}${r.turno&&turnosOf(S.store).length>1&&TURNOS[r.turno]?' ('+TURNOS[r.turno].toLowerCase()+')':''} às ${fmtTime(r.at)}</div>`:''}${r.sep&&temPrec?`<div class="meta" style="color:var(--erva-text);font-weight:700">✓ Separado por ${h(r.sepBy)} às ${fmtTime(r.sepAt)}</div>`:''}</div>
+      out+=`<div class="row repo-row ${r.sep&&temPrec?'done':''}" data-n="${h(norm(i.name))}">${temPrec?`<button class="check" data-act="rsep" data-id="${i.id}" aria-pressed="${!!r.sep}" aria-label="Marcar ${h(i.name)} como separado">${CHECK}</button>`:''}<div class="txt"><div class="t">${h(i.name)}</div>${idealHoje(i)?`<div class="needbox"><span>Precisa ter ${am?proxNome():'hoje'}</span><b>${h(idealHoje(i))}</b></div>`:''}${r.at&&hasRec(r)?`<div class="meta">${!am&&r.antes?deixadoTxt(r):'Anotado por '}${h(r.by)}${r.turno&&turnosOf(S.store).length>1&&TURNOS[r.turno]?' ('+TURNOS[r.turno].toLowerCase()+')':''} às ${fmtTime(r.at)}</div>`:''}${r.sep&&temPrec?`<div class="meta" style="color:var(--erva-text);font-weight:700">✓ Separado por ${h(r.sepBy)} às ${fmtTime(r.sepAt)}</div>`:''}</div>
       <div class="pair">${stepper('t',i,tem,'Tem','has-tem','Quanto tem de ')}${stepper('p',i,pr,'Precisa','has','Quanto precisa de ')}</div></div>`;
     });
     out+=`</div></div>`;
@@ -1195,7 +1204,7 @@ function sheetFolgas(storeSel,ym){
 function currentSheet(){const P=S.pr;if(!P.month)P.month=S.keys.date.slice(0,7);
   const ts=turnosOf(P.store);const tsel=ts.length>1?P.turno:'ambos';const tsuf=tsel==='ambos'?'':'-'+tsel;
   if(P.kind==='folgas'){return {html:sheetFolgas(P.fstore||'todas',P.month),file:`escala-folga-${P.fstore||'todas'}-${P.month}.html`,title:'Escala de folga'}}
-  if(P.kind==='producao'){const dt=addDays(S.keys.date,P.pday||0);return {html:sheetProducao(P.store,dt,tsel),file:`producao-${P.store}${tsuf}-${dt}.html`,title:'Produção diária'}}
+  if(P.kind==='producao'){const dt=P.pday?proxDia(S.keys.date):S.keys.date;return {html:sheetProducao(P.store,dt,tsel),file:`producao-${P.store}${tsuf}-${dt}.html`,title:'Produção diária'}}
   if(P.kind==='limpeza'||P.kind==='limpeza_at'){const fn=P.kind==='limpeza'?'cozinha':'atendimento';if(typeof P.week==='string'&&P.week.startsWith('r:')){const os=P.week.slice(2).split(',').map(Number);return {html:os.map(o=>sheetLimpeza(P.store,o,fn,tsel)).join(''),file:`limpeza-${fn}-${P.store}${tsuf}-${os.length}-semanas-${addDays(S.keys.week,7*os[0])}.html`,title:'Limpeza semanal'}}if(P.week==='m4')return {html:[1,2,3,4].map(o=>sheetLimpeza(P.store,o,fn,tsel)).join(''),file:`limpeza-${fn}-${P.store}${tsuf}-4-semanas-${addDays(S.keys.week,7)}.html`,title:'Limpeza semanal'};return {html:sheetLimpeza(P.store,P.week,fn,tsel),file:`limpeza-${fn}-${P.store}${tsuf}-${addDays(S.keys.week,7*P.week)}.html`,title:'Limpeza semanal'}}
   return {html:sheetMensal(P.store,P.month,P.kind,tsel),file:`controle-${P.kind==='salao'?'salao':'banheiro'}-${P.store}${tsuf}-${P.month}.html`,title:P.kind==='salao'?'Controle do salão':'Controle dos banheiros'}}
 function viewImprimir(){
@@ -1205,7 +1214,7 @@ function viewImprimir(){
     <div class="field" style="grid-column:1/-1"><span class="label">Folha</span>${pick('pkindb',P.kind,[['producao','Lista de produção do dia'],['folgas','Escala de folga do mês'],['limpeza','Limpeza semanal da cozinha'],['limpeza_at','Limpeza semanal do atendimento'],['banheiro','Controle dos banheiros'],['salao','Controle do salão']])}</div>
     ${P.kind==='folgas'?`<div class="field"><span class="label">Loja</span>${seg('pfstore',P.fstore||'todas',[['todas','Todas'],...STORES.map(x=>[x.id,x.short])])}</div>`:`<div class="field"><span class="label">Loja</span>${seg('pstore',P.store,STORES.map(x=>[x.id,x.short]))}</div>`}
     ${P.kind==='folgas'?'':turnosOf(P.store).length>1?`<div class="field"><span class="label">Turno</span>${seg('pturno',P.turno,[['ambos','Manhã e noite'],['manha','Só manhã'],['noite','Só noite']])}</div>`:`<div class="field"><span class="label">Turno</span><div class="seg"><button aria-pressed="true" disabled>Só ${TURNOS[turnosOf(P.store)[0]].toLowerCase()}</button></div></div>`}
-    ${P.kind==='producao'?`<div class="field"><span class="label">Dia</span>${seg('ppday',String(P.pday||0),[['0','Hoje ('+diaNome(hojeDow()).slice(0,3)+')'],['1','Amanhã ('+diaNome(new Date(addDays(S.keys.date,1)+'T00:00:00Z').getUTCDay()).slice(0,3)+')']])}</div>`:P.kind.startsWith('limpeza')?`<div class="field"><span class="label">Semana</span>${pick('pweek',String(P.week),[['0','Esta ('+fmtDM(S.keys.week)+')'],['1','Semana de '+fmtDM(addDays(S.keys.week,7))],['2','Semana de '+fmtDM(addDays(S.keys.week,14))],['3','Semana de '+fmtDM(addDays(S.keys.week,21))],['m4','Próximas 4 semanas (1 arquivo)'],...(typeof P.week==='string'&&P.week.startsWith('r:')?[[P.week,'Período gerado: '+(P.wlabel||'')]]:[])])}</div>`
+    ${P.kind==='producao'?`<div class="field"><span class="label">Dia</span>${seg('ppday',String(P.pday||0),[['0','Hoje ('+diaNome(hojeDow()).slice(0,3)+')'],['1',proxBtn()]])}</div>`:P.kind.startsWith('limpeza')?`<div class="field"><span class="label">Semana</span>${pick('pweek',String(P.week),[['0','Esta ('+fmtDM(S.keys.week)+')'],['1','Semana de '+fmtDM(addDays(S.keys.week,7))],['2','Semana de '+fmtDM(addDays(S.keys.week,14))],['3','Semana de '+fmtDM(addDays(S.keys.week,21))],['m4','Próximas 4 semanas (1 arquivo)'],...(typeof P.week==='string'&&P.week.startsWith('r:')?[[P.week,'Período gerado: '+(P.wlabel||'')]]:[])])}</div>`
       :`<div class="field"><span class="label">Mês</span><div class="seg"><button data-act="pmonth" data-v="-1" aria-label="Mês anterior">‹</button><button aria-pressed="true" disabled style="flex:3">${MESES[m-1]} ${y}</button><button data-act="pmonth" data-v="1" aria-label="Próximo mês">›</button></div></div>`}
   </div>
   <div style="display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap"><button class="btn primary" data-act="pdown">Baixar folha para imprimir</button><span class="small muted">Baixa um arquivo que já abre pronto para imprimir em A4 deitado. No computador, abra o arquivo e a janela de impressão aparece sozinha.</span></div>
