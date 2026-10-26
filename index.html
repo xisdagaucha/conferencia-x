@@ -340,6 +340,18 @@ table.folg tfoot td{border-top:2px solid var(--line)}
 @media print{.dirtybar{display:none}}
 .chipbtn{cursor:pointer;font:inherit;font-size:12.5px;font-weight:700;border:1px solid transparent;min-height:34px}
 .chipbtn.ok{background:var(--erva);color:var(--erva-ink);border-color:var(--erva)}
+.nb-msgs{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.nb-msg{background:rgba(255,255,255,.08);border-radius:12px;padding:8px 12px;display:flex;flex-direction:column;gap:2px;font-size:14px;line-height:1.35}
+.nb-msg b{color:#28c850;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.nb-send{display:flex;gap:8px;margin-top:10px}
+.nb-send input{flex:1;min-width:0;font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.2);background:#1b1f1b;color:#fff}
+.nb-send .btn{background:#28c850;color:#07110a;border-color:#28c850;font-weight:800}
+.nb-sub{margin-top:12px;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#28c850}
+.obs-list{display:flex;flex-direction:column;gap:8px}
+.obs-item{border:1px solid var(--line);border-left:4px solid #e8a33d;border-radius:12px;padding:10px 12px;background:var(--surface)}
+.obs-t{font-weight:700;line-height:1.35}
+.obs-m{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
+.obs-send input{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
 </style>
 
 <header class="brandbar"><div class="wrap">
@@ -368,7 +380,7 @@ const PHASES=[['abertura','Abertura'],['turno','Durante o turno'],['banheiro','H
 const CHECK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
 const S={folgas:{},fol:{month:'',store:'todas'},rel:{store:'todas',per:'7',a:'',b:'',data:null,key:''},repoCat:'',pend:{},fotoCache:{},upl:null,fotoFor:null,repoQ:'',cfgQ:'',db:null,user:null,gestora:false,tab:'preencher',store:'barreiros',turno:'noite',me:'',
-  cfg:{},day:{},week:{},dayExists:{},dayAm:{},dayAmExists:{},weekExists:{},keys:null,subs:[],
+  cfg:{},day:{},week:{},dayExists:{},dayAm:{},dayAmExists:{},obs:{},obsEx:{},weekExists:{},keys:null,subs:[],
   hist:{date:'',store:'todas',rows:null,summary:null},pr:{kind:'limpeza',store:'barreiros',week:0,month:'',turno:'ambos'},mon:{store:'barreiros',month:'',turno:'noite',phase:'banheiro',data:null,key:''},rotStore:'barreiros',
   cfgStore:'barreiros',edit:null,dirty:false,readOnly:false};
 
@@ -585,7 +597,7 @@ function markArea(store,area,done,resp,foto){
 
 // ---------- assinaturas ----------
 function subscribe(){
-  S.subs.forEach(u=>{try{u()}catch(e){}});S.subs=[];
+  S.subs.forEach(u=>{try{u()}catch(e){}});S.subs=[];S.parab={};
   const k=S.keys=curKeys();
   S.subs.push(S.db.collection('folgas').onSnapshot(q=>{const f={};q.docs.forEach(d=>{f[d.id]=d.data()});S.folgas=f;render()},()=>{}));
   S.subs.push(S.db.doc('config/lojas').onSnapshot(snap=>{const L=snap.exists&&Array.isArray(snap.data().stores)&&snap.data().stores.length?snap.data().stores:STORES_PADRAO;
@@ -597,6 +609,7 @@ function subscribe(){
     const s=st.id;
     S.subs.push(S.db.doc('config/'+s).onSnapshot(snap=>{S.cfg[s]=snap.exists?snap.data():null;S.cfgLoaded=STORES.every(x=>x.id in S.cfg);applyAuth();fixSelections();render()},onErr));
     S.subs.push(S.db.doc('days/'+s+'_'+k.date).onSnapshot(snap=>{S.dayExists[s]=snap.exists;S.day[s]=snap.exists?snap.data():{};render()},onErr));
+    S.subs.push(S.db.doc('days/'+s+'_observacoes').onSnapshot(snap=>{S.obsEx[s]=snap.exists;S.obs[s]=snap.exists?(snap.data().obs||{}):{};render()},()=>{}));
     S.subs.push(S.db.doc('days/'+s+'_'+proxDia(k.date)).onSnapshot(snap=>{S.dayAmExists[s]=snap.exists;S.dayAm[s]=snap.exists?snap.data():{};if(S.tab==='reposicao'||S.tab==='producao')render()},()=>{}));
     S.subs.push(S.db.doc('weeks/'+s+'_'+k.week).onSnapshot(snap=>{S.weekExists[s]=snap.exists;S.week[s]=snap.exists?snap.data():{};render()},onErr));
   });
@@ -886,6 +899,20 @@ function commitProd(store,id){const key=store+'|prod|'+id;const v=S.pend[key];de
   const cur=(prodDay(store).prod||{})[id]||{};const patch={};if(v.tem!=null&&String(v.tem).trim()!==String(cur.tem||''))patch.tem=String(v.tem).trim();if(v.fazer!=null&&String(v.fazer).trim()!==String(cur.fazer||''))patch.fazer=String(v.fazer).trim();
   if(Object.keys(patch).length)markProd(store,p,patch)}
 
+// ---------- observações (ficam guardadas até alguém marcar como resolvido) ----------
+function obsList(store){const o=S.obs[store]||{};return Object.entries(o).map(([id,r])=>Object.assign({id},r)).filter(r=>r&&r.txt)}
+function obsAbertas(store){return obsList(store).filter(r=>!r.ok).sort((a,b)=>String(b.at).localeCompare(String(a.at)))}
+function obsBox(store,full){const ab=obsAbertas(store);const res=obsList(store).filter(r=>r.ok&&r.okAt&&Date.now()-Date.parse(r.okAt)<3*864e5).sort((a,b)=>String(b.okAt).localeCompare(String(a.okAt)));
+  return `<div class="obs-list">${ab.length?ab.map(r=>`<div class="obs-item"><div class="obs-t">${h(r.txt)}</div><div class="obs-m"><span class="small muted">${h(r.by)} · ${fmtWhen(r.at)}</span><button class="btn small" data-act="obsok" data-s="${store}" data-id="${r.id}">✓ Resolvido</button></div></div>`).join(''):'<div class="small muted">Nenhuma observação em aberto.</div>'}</div>
+  ${res.length?`<div class="small muted" style="margin-top:8px"><b>Resolvidos:</b> ${res.map(r=>`<span style="text-decoration:line-through">${h(r.txt)}</span> (${h(r.okBy)})`).join(' · ')}</div>`:''}
+  ${full?`<div class="nb-send obs-send"><input type="text" id="obs-in-${store}" maxlength="300" placeholder="Ex.: preciso de uma lixeira nova, a chapa está com defeito…" aria-label="Nova observação" autocomplete="off"><button class="btn primary" data-act="obsadd" data-s="${store}">Adicionar</button></div>`:''}`}
+function obsAdd(store){const inp=document.getElementById('obs-in-'+store);const txt=(inp&&inp.value||'').trim();if(!txt){toast('Escreva a observação antes.');return}
+  const id=uid('o');const rec={txt,by:S.gestora?'Gestora':(S.me||'Equipe'),at:new Date().toISOString(),ok:false};
+  S.obs[store]=Object.assign({},S.obs[store]||{},{[id]:rec});if(inp)inp.value='';render();toast('Observação anotada.');
+  write('days/'+store+'_observacoes',!!S.obsEx[store],{kind:'observacoes'},{obs:{[id]:rec}})}
+function obsOk(store,id){const r=(S.obs[store]||{})[id];if(!r)return;const rec=Object.assign({},r,{ok:true,okBy:S.gestora?'Gestora':(S.me||'Equipe'),okAt:new Date().toISOString()});
+  S.obs[store]=Object.assign({},S.obs[store],{[id]:rec});render();toast('Marcado como resolvido.');
+  write('days/'+store+'_observacoes',!!S.obsEx[store],{kind:'observacoes'},{obs:{[id]:rec}})}
 function norm(s){return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase()}
 function viewRepo(){
   const c=S.cfg[S.store];
@@ -920,7 +947,9 @@ function viewRepo(){
     out+=`</div></div>`;
   });
   out+=`<div class="empty" id="repo-none" ${shown?'hidden':''}>Nenhum item encontrado. Se faltar algum item na lista, avise a gestora.</div>`;
-  out+=`</div></section></div>`;
+  out+=`</div></section>`;
+  out+=`<section class="panel"><div class="panel-h"><h2>Observações</h2>${obsAbertas(S.store).length?`<span class="chip me num">${obsAbertas(S.store).length} em aberto</span>`:''}</div><div class="panel-b">
+  <p class="small muted" style="margin:0 0 10px">Precisa de algo que não está na lista (uma lixeira nova, um equipamento, um conserto) ou quer deixar um recado? Escreva aqui. Fica guardado até alguém marcar como resolvido.</p>${obsBox(S.store,true)}</div></section></div>`;
   return out;
 }
 
@@ -948,14 +977,35 @@ function niverNorm(v){const m=String(v||'').match(/^\s*(\d{1,2})\s*[\/\-.]\s*(\d
 function aniversariantes(){const L=[];const vis={};STORES.forEach(st=>((S.cfg[st.id]||{}).employees||[]).forEach(e=>{const n=niverNorm(e.niver);if(isGestorF(e)){if(vis[e.id])return;vis[e.id]=1}if(n)L.push({st:st.id,e,n,d:+n.slice(0,2),m:+n.slice(3)})}));return L}
 function spDate(){return new Date(Date.now()-3*3600e3).toISOString().slice(0,10)}
 function niverHoje(e){const n=niverNorm(e&&e.niver);const t=spDate();return !!n&&n===t.slice(8,10)+'/'+t.slice(5,7)}
+// ---------- recados de parabéns (ficam no dia do aniversário: days/<loja>_<data>) ----------
+function niverDate(e){const n=niverNorm(e&&e.niver);if(!n)return '';const t=spDate(),y=+t.slice(0,4);let best='',bd=1e9;[y-1,y,y+1].forEach(yy=>{const d=yy+'-'+n.slice(3)+'-'+n.slice(0,2);const df=Math.abs(Date.parse(t)-Date.parse(d));if(df<bd){bd=df;best=d}});return best}
+function parabPath(st,e){return 'days/'+st+'_'+niverDate(e)}
+function parabMsgs(st,e){const p=parabPath(st,e);S.parab=S.parab||{};
+  if(!(p in S.parab)&&S.db){S.parab[p]=null;S.subs.push(S.db.doc(p).onSnapshot(sn=>{S.parab[p]=sn.exists?sn.data():{};S.parabEx=S.parabEx||{};S.parabEx[p]=sn.exists;render()},()=>{}))}
+  const m=((S.parab[p]||{}).parabens||{})[e.id]||{};return Object.values(m).filter(x=>x&&x.txt).sort((a,b)=>String(a.at).localeCompare(String(b.at)))}
+function parabBox(st,e,podeEnviar){const msgs=parabMsgs(st,e);
+  return `<div class="nb-msgs">${msgs.map(m=>`<div class="nb-msg"><b>${h(m.by)}</b><span>${h(m.txt)}</span></div>`).join('')}</div>${podeEnviar?`<div class="nb-send"><input type="text" id="pb-${st}-${e.id}" maxlength="200" placeholder="Escreva um parabéns para ${h(e.name)}…" aria-label="Mensagem de parabéns para ${h(e.name)}" autocomplete="off"><button class="btn" data-act="parab" data-s="${st}" data-id="${e.id}">Enviar</button></div>`:''}`}
+function enviarParab(st,id){const inp=document.getElementById('pb-'+st+'-'+id);const txt=(inp&&inp.value||'').trim();if(!txt){toast('Escreva a mensagem antes de enviar.');return}
+  const e=((S.cfg[st]||{}).employees||[]).find(x=>x.id===id);if(!e)return;const p=parabPath(st,e);const mid=uid('m');const rec={by:S.gestora?'Gestora':(S.me||'Equipe'),txt,at:new Date().toISOString()};
+  S.parab=S.parab||{};const d=S.parab[p]=Object.assign({},S.parab[p]||{});d.parabens=Object.assign({},d.parabens||{});d.parabens[id]=Object.assign({},d.parabens[id]||{},{[mid]:rec});
+  if(inp)inp.value='';render();toast('Parabéns enviado para '+e.name+'!');
+  write(p,!!(S.parabEx||{})[p],{store:st,date:niverDate(e)},{parabens:{[id]:{[mid]:rec}}})}
+function niverDiff(e){const d=niverDate(e);return d?Math.round((Date.parse(spDate())-Date.parse(d))/864e5):null}
 function niverBanner(me){
-  const mes=+spDate().slice(5,7);const L=aniversariantes().filter(x=>x.m===mes).sort((a,b)=>a.d-b.d);if(!L.length)return '';
-  const eu=me&&niverHoje(me);const hoje=L.filter(x=>niverHoje(x.e)&&(!me||x.e.id!==me.id));const tday=+spDate().slice(8,10);
+  const mes=+spDate().slice(5,7);const all=aniversariantes();const L=all.filter(x=>x.m===mes).sort((a,b)=>a.d-b.d);
+  // recados: dá para mandar de 3 dias antes até 2 dias depois; o aniversariante vê do dia até 2 dias depois
+  const alvo=all.filter(x=>{const df=niverDiff(x.e);return df!=null&&df>=-3&&df<=2&&(!me||x.e.id!==me.id)}).sort((a,b)=>niverDiff(b.e)-niverDiff(a.e));
+  const eu=me&&niverHoje(me);const tday=+spDate().slice(8,10);
+  const meSt=me&&(all.find(x=>x.e.id===me.id)||{}).st;const dias=me?niverDiff(me):null;
+  const meusRecados=me&&meSt&&dias!=null&&dias>=0&&dias<=2?parabMsgs(meSt,me):[];
+  if(!L.length&&!alvo.length&&!meusRecados.length)return '';
+  const tag=df=>df===0?'Hoje':df===-1?'Amanhã':df<0?'Em '+(-df)+' dias':df===1?'Ontem':'Há '+df+' dias';
+  const txt=(x,df)=>{const dt=x.n;return df===0?'está de aniversário e de folga. Deixe um parabéns!':df<0?'faz aniversário dia '+dt+'. Já deixe o seu parabéns, a pessoa vai ler no dia!':'fez aniversário dia '+dt+'. Ainda dá tempo de deixar um parabéns!'};
   return `<section class="nb">
-    ${eu?`<div class="nb-eu"><span class="nb-tag">É hoje!</span><div class="nb-big">Feliz aniversário, ${h(me.name)}!</div><p>A equipe Xis da Gaúcha deseja um dia incrível. Hoje é a sua folga de aniversário.</p></div>`:''}
-    ${hoje.length?`<div class="nb-hoje"><span class="nb-tag">Hoje</span><div class="nb-big">${hoje.map(x=>h(x.e.name)).join(' e ')}</div><p>${hoje.length>1?'estão':'está'} de aniversário e de folga. Deixe um parabéns!</p></div>`:''}
-    <div class="nb-head">Aniversariantes de ${MESES[mes-1]}</div>
-    <div class="nb-list">${L.map(x=>`<div class="nb-item ${niverHoje(x.e)?'today':x.d<tday?'past':''}"><div class="nb-date"><b>${x.n.slice(0,2)}</b><span>${MESES[x.m-1].slice(0,3)}</span></div><div class="nb-name">${h(x.e.name)}${STORES.length>1?`<small>${h(STORES.find(s=>s.id===x.st).short)}</small>`:''}</div>${niverHoje(x.e)?'<span class="nb-pill">Hoje</span>':''}</div>`).join('')}</div>
+    ${eu?`<div class="nb-eu"><span class="nb-tag">É hoje!</span><div class="nb-big">Feliz aniversário, ${h(me.name)}!</div><p>A equipe Xis da Gaúcha deseja um dia incrível. Hoje é a sua folga de aniversário.</p>${meusRecados.length?`<div class="nb-sub">Recados da equipe</div>${parabBox(meSt,me,false)}`:''}</div>`:meusRecados.length?`<div class="nb-eu"><span class="nb-tag">Recados do seu aniversário</span><p>A equipe deixou ${meusRecados.length===1?'um recado':meusRecados.length+' recados'} para você:</p>${parabBox(meSt,me,false)}</div>`:''}
+    ${alvo.map(x=>{const df=niverDiff(x.e);return `<div class="nb-hoje"><span class="nb-tag">${tag(df)}</span><div class="nb-big">${h(x.e.name)}</div><p>${txt(x,df)}</p>${parabBox(x.st,x.e,!!(S.auth))}</div>`}).join('')}
+    ${L.length?`<div class="nb-head">Aniversariantes de ${MESES[mes-1]}</div>
+    <div class="nb-list">${L.map(x=>`<div class="nb-item ${niverHoje(x.e)?'today':x.d<tday?'past':''}"><div class="nb-date"><b>${x.n.slice(0,2)}</b><span>${MESES[x.m-1].slice(0,3)}</span></div><div class="nb-name">${h(x.e.name)}${STORES.length>1?`<small>${h(STORES.find(s=>s.id===x.st).short)}</small>`:''}</div>${niverHoje(x.e)?'<span class="nb-pill">Hoje</span>':''}</div>`).join('')}</div>`:''}
   </section>`;
 }
 function niverEquipe(me){
@@ -982,6 +1032,7 @@ function viewPainel(){
       out+=`<div><div class="label" style="margin-bottom:6px">Produção de hoje</div>${bar(pl.length-pend.length,pl.length)}${pend.length?`<div class="small muted" style="margin-top:6px">Falta fazer: ${pend.slice(0,8).map(p=>{const r=pr[p.id]||{};return h(p.name)+(r.fazer&&r.fazer!=='0'?' ('+h(fazerTxt(prodMeta(p),r.fazer))+')':'')}).join(', ')}${pend.length>8?' e mais '+(pend.length-8):''}</div>`:''}</div>`}}
     out+=`<div><div class="label" style="margin-bottom:6px">Reposição de hoje · ${x.need.length} ${x.need.length===1?'item':'itens'}</div>${x.need.length?`<div class="tablewrap"><table class="mini"><thead><tr><th>Item</th><th>Tem</th><th>Precisa</th><th>Quem</th></tr></thead><tbody>${x.need.map(r=>`<tr><td>${h(r.name)}</td><td class="num">${h(rTem(r))||'<span class="muted">—</span>'}</td><td class="num">${rPrec(r)!==''?'<b>'+h(rPrec(r))+'</b>':r.sug!=null?`<span class="sug" title="Estoque ideal ${h(r.ideal)} menos o que tem">~${fmtN(r.sug)} sugerido</span>`:'<span class="muted">—</span>'}</td><td class="small muted">${h(r.by)} · ${fmtTime(r.at)}${turnosOf(st.id).length>1?' · '+TURNOS[r.turno]:''}</td></tr>`).join('')}</tbody></table></div>
       <button class="btn small" style="margin-top:8px" data-act="copyneed" data-v="${st.id}">Copiar lista para o estoque</button>`:'<span class="small muted">Nenhum pedido de reposição hoje.</span>'}</div>
+      ${obsAbertas(st.id).length?`<div><div class="label" style="margin-bottom:6px">Observações da equipe · ${obsAbertas(st.id).length} em aberto</div>${obsBox(st.id,false)}</div>`:''}
       <div><div class="label" style="margin-bottom:6px">Limpeza da semana</div>${bar(x.aDone.length,x.areas.length)}
       ${(()=>{const late=x.areas.filter(a=>areaEstado(a,x.wk[a.id])==='atrasado').length;return late?`<div class="small" style="color:var(--bad);margin-top:6px;font-weight:600">${late} ${late>1?'limpezas atrasadas':'limpeza atrasada'}</div>`:''})()}
       <div class="rows" style="margin-top:6px">${x.areas.map(a=>{const r=x.wk[a.id]||{};return `<div class="row" style="padding-block:6px"><div class="txt"><span class="t" style="font-weight:500">${h(a.name)}</span> <span class="meta">· ${diaNome(a.dia).slice(0,3)} · ${h(x.rot[a.id])}</span></div>${estadoChip(a,r,st.id)}</div>`}).join('')}</div></div>`;
@@ -1567,6 +1618,9 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='modal'){e.targ
     const st=S.store;clearTimeout(commitT[key]);commitT[key]=setTimeout(()=>commitProd(st,id),900);return}
   if(a==='rsep'){if(S.readOnly){toast('Seu acesso é só de visualização.');return}const it=(c.items||[]).find(x=>x.id===id);if(!it)return;const r=itemRec(repoDay(S.store).items,id);markSep(S.store,it,!r.sep);if(!r.sep)toast(it.name+' separado.');return}
   if(a==='reposo'){S.repoSoSep=!S.repoSoSep;render();return}
+  if(a==='obsadd'){obsAdd(b.dataset.s);return}
+  if(a==='obsok'){obsOk(b.dataset.s,id);return}
+  if(a==='parab'){enviarParab(b.dataset.s,id);return}
   if(a==='proddia'){S.prodAm=v==='1';Object.keys(S.pend).forEach(k=>{if(k.includes('|prod|'))delete S.pend[k]});render();return}
   if(a==='repodia'){S.repoAm=v==='1';Object.keys(S.pend).forEach(k=>{if(!k.includes('|prod|'))delete S.pend[k]});render();return}
   if(a==='pdone'){if(S.readOnly){toast('Seu acesso é só de visualização.');return}const p=prodList(S.store).find(x=>x.id===id);if(!p)return;const r=(prodDay(S.store).prod||{})[id]||{};
