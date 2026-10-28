@@ -361,6 +361,9 @@ table.folg tfoot td{border-top:2px solid var(--line)}
 .emp-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
 @media (max-width:620px){.ef-name{grid-column:1/-1}}
 .area-off{opacity:.55;background:var(--surface2)}
+.fcell.forc{background:#e8a33d;border-color:#e8a33d;color:#1a1200}
+.fcell.troc{outline:3px solid var(--ink);outline-offset:-3px}
+.fsel{font:inherit;font-size:13px;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
 </style>
 
 <header class="brandbar"><div class="wrap">
@@ -488,10 +491,33 @@ function semanasMes(ym){const first=ym+'-01';const [y,m]=ym.split('-').map(Numbe
 function fkey(store,emp){return store+'_'+emp.id}
 function folgaDomingo(store,emp,ym){const d=S.folgas[ym];return d&&d.dom&&d.dom[fkey(store,emp)]||''}
 function isNiver(emp,date){const n=niverNorm(emp&&emp.niver);return !!n&&n===date.slice(8,10)+'/'+date.slice(5,7)}
-function isFolga(store,emp,date){if(!emp)return false;if(new Date(date+'T00:00:00Z').getUTCDay()===1)return true;if(isNiver(emp,date))return true;const k=fkey(store,emp);return Object.values(S.folgas||{}).some(d=>d&&d.dom&&d.dom[k]===date)}
-function proximaFolga(store,emp){const t=S.keys.date;let best='';const n=niverNorm(emp&&emp.niver);if(n){let d=t.slice(0,4)+'-'+n.slice(3)+'-'+n.slice(0,2);if(d<t)d=(+t.slice(0,4)+1)+d.slice(4);if(d<=addDays(t,40))best=d}Object.values(S.folgas||{}).forEach(d=>{const v=d&&d.dom&&d.dom[fkey(store,emp)];if(v&&v>=t&&(!best||v<best))best=v});return best}
+// Folga de domingo: cada um tem um "domingo fixo" do mês (1º, 2º, 3º, 4º ou último) que se repete sozinho.
+// A gestora pode trocar só um mês tocando em outro domingo. Regra: ninguém trabalha mais de 3 domingos seguidos;
+// se chegar no 4º, ele vira folga automática. Vale a partir de FOLGA_NOVA (antes disso fica só o que foi marcado).
+const FOLGA_NOVA='2026-11-02';
+function domingosMes(ym){const [y,m]=ym.split('-').map(Number);const out=[];for(let d=1;d<=31;d++){const dt=new Date(Date.UTC(y,m-1,d));if(dt.getUTCMonth()!==m-1)break;if(dt.getUTCDay()===0)out.push(dt.toISOString().slice(0,10))}return out}
+function explicitFolgas(store,emp){const k=fkey(store,emp);const L=[];Object.values(S.folgas||{}).forEach(d=>{const v=d&&d.dom&&d.dom[k];if(v)L.push(v)});return L}
+function domFixoOf(store,emp){if(emp&&emp.domFixo)return +emp.domFixo;const ex=explicitFolgas(store,emp).sort();const last=ex[ex.length-1];if(!last)return 0;const ds=domingosMes(last.slice(0,7));const i=ds.indexOf(last);return i<0?0:(i===ds.length-1&&i>=4?5:i+1)}
+function fixoDate(n,ym){const ds=domingosMes(ym);if(!n||!ds.length)return '';return n>=5?ds[ds.length-1]:ds[Math.min(n,ds.length)-1]}
+const FOLMEMO={};let FOLSTAMP='';
+function folStamp(){return JSON.stringify(S.folgas||{})+'|'+STORES.map(st=>((S.cfg[st.id]||{}).employees||[]).map(e=>e.id+':'+(e.domFixo||'')+':'+(e.admissao||'')+':'+(e.niver||'')).join(';')).join('/')}
+function folgasDom(store,emp){// Map domingo -> 'F' (fixo ou escolhido), 'A' (aniversário), 'X' (folga obrigatória do 4º domingo)
+  const st=folStamp();if(st!==FOLSTAMP){FOLSTAMP=st;for(const k in FOLMEMO)delete FOLMEMO[k]}
+  const key=store+'|'+emp.id;if(FOLMEMO[key])return FOLMEMO[key];
+  const out=new Map();const ex=new Set(explicitFolgas(store,emp));const n=domFixoOf(store,emp);const exMes={};ex.forEach(d=>{(exMes[d.slice(0,7)]=exMes[d.slice(0,7)]||[]).push(d)});
+  const ini=emp.admissao&&/^\d{4}-\d{2}-\d{2}$/.test(emp.admissao)?emp.admissao:addDays(S.keys.date.slice(0,7)+'-01',-120);
+  let d=ini;while(new Date(d+'T00:00:00Z').getUTCDay()!==0)d=addDays(d,1);
+  const fim=addDays(S.keys.date,420);let cnt=0;
+  for(;d<=fim;d=addDays(d,7)){const ym=d.slice(0,7);let f='';
+    if(d<FOLGA_NOVA){if(ex.has(d))f='F';else if(isNiver(emp,d))f='A'}
+    else{const base=exMes[ym]?exMes[ym]:[fixoDate(n,ym)];if(base.includes(d))f='F';else if(isNiver(emp,d))f='A';else if(cnt>=3)f='X'}
+    if(f){out.set(d,f);cnt=0}else cnt++}
+  FOLMEMO[key]=out;return out}
+function isFolga(store,emp,date){if(!emp)return false;if(new Date(date+'T00:00:00Z').getUTCDay()===1)return true;if(isNiver(emp,date))return true;if(isGestorF(emp))return false;return folgasDom(store,emp).has(date)}
+function proximaFolga(store,emp){const t=S.keys.date;let best='';const n=niverNorm(emp&&emp.niver);if(n){let d=t.slice(0,4)+'-'+n.slice(3)+'-'+n.slice(0,2);if(d<t)d=(+t.slice(0,4)+1)+d.slice(4);if(d<=addDays(t,40))best=d}
+  if(!isGestorF(emp))for(const d of folgasDom(store,emp).keys()){if(d>=t&&d<=addDays(t,40)&&(!best||d<best))best=d}return best}
 const ROTMEMO={};let ROTSTAMP='';
-function rotStamp(){return JSON.stringify([Object.keys(S.cfg).map(k=>S.cfg[k]&&((S.cfg[k].areas||[]).length+'/'+(S.cfg[k].employees||[]).length)),Object.keys(S.folgas||{}).length,JSON.stringify(S.folgas||{}).length,JSON.stringify((S.cfg[S.store]||{}).areas||[]).length])}
+function rotStamp(){return JSON.stringify([folStamp().length,Object.keys(S.cfg).map(k=>S.cfg[k]&&((S.cfg[k].areas||[]).length+'/'+(S.cfg[k].employees||[]).length)),Object.keys(S.folgas||{}).length,JSON.stringify(S.folgas||{}).length,JSON.stringify((S.cfg[S.store]||{}).areas||[]).length])}
 function rotAcum(store,wk){// limpezas de cada pessoa nas semanas anteriores (desde a regra nova), para desempatar com justiça
   if(wk<=REGRA_NOVA)return {};const st=rotStamp();if(st!==ROTSTAMP){ROTSTAMP=st;for(const k in ROTMEMO)delete ROTMEMO[k]}
   const key=store+'|'+wk;if(ROTMEMO[key])return ROTMEMO[key];
@@ -1054,27 +1080,44 @@ function viewPainel(){
 function folEmps(storeSel){const L=[];STORES.forEach(st=>{if(storeSel!=='todas'&&st.id!==storeSel)return;((S.cfg[st.id]||{}).employees||[]).filter(e=>!isGestorF(e)).forEach(e=>L.push({st:st.id,e}))});return L.sort((a,b)=>a.e.name.localeCompare(b.e.name,'pt-BR'))}
 function viewFolgas(){
   const F=S.fol;if(!F.month)F.month=S.keys.date.slice(0,7);const ym=F.month;const [y,m]=ym.split('-').map(Number);
-  const weeks=semanasMes(ym);const doms=weeks.map(w=>addDays(w,6));const rows=folEmps(F.store);const doc=S.folgas[ym]||{};const dom=doc.dom||{};
+  const doms=domingosMes(ym);const rows=folEmps(F.store);
+  const ORD=[['','—'],['1','1º domingo'],['2','2º domingo'],['3','3º domingo'],['4','4º domingo'],['5','Último domingo']];
   let out=`<div class="stack"><section class="panel"><div class="panel-b stack" style="gap:12px">
     <div class="field"><span class="label">Mês</span><div class="seg"><button data-act="fmonth" data-v="-1" aria-label="Mês anterior">‹</button><button aria-pressed="true" disabled style="flex:3">${MESES[m-1]} ${y}</button><button data-act="fmonth" data-v="1" aria-label="Próximo mês">›</button></div></div>
     <div class="field"><span class="label">Loja</span>${pick('fstore',F.store,[['todas','Todas'],...STORES.map(x=>[x.id,x.short])])}</div>
-    <p class="small muted" style="margin:0">Toque no domingo de folga de cada funcionário (um por mês). Toque de novo para tirar. Segunda é folga de todos, porque a loja fecha. O aniversário também é folga e entra sozinho. O rodízio de limpeza já pula quem está de folga no domingo.</p>
+    <p class="small muted" style="margin:0">Cada funcionário tem um <b>domingo fixo</b> de folga (por exemplo, sempre o 1º domingo do mês) e ele se repete sozinho todo mês. Para trocar só neste mês, toque em outro domingo; toque de novo para voltar ao fixo. <b>Ninguém trabalha mais de 3 domingos seguidos:</b> se chegar no 4º, o app dá folga automática (<b>F!</b>), contando também quem começou há pouco (coloque a data de início no cadastro). Segunda é folga de todos e o aniversário entra sozinho.</p>
   </div></section>`;
-  out+=`<section class="panel"><div class="panel-h"><h2>Escala de folga · ${MESES[m-1]}</h2></div><div class="tablewrap"><table class="grid folg"><thead><tr><th class="sticky">Funcionário</th><th>Horário</th>${doms.map(d=>`<th>Dom ${fmtDM(d)}</th>`).join('')}</tr></thead><tbody>
-  ${rows.map(({st,e})=>{const k=fkey(st,e);const cur=dom[k]||'';return `<tr><td class="sticky"><b>${h(e.name)}</b>${(()=>{const n=niverNorm(e.niver);return n&&+n.slice(3)===m?`<div class="small" style="color:var(--erva-text);font-weight:700">Aniversário ${n} · folga</div>`:''})()}${F.store==='todas'&&STORES.length>1?`<div class="small muted">${h(STORES.find(x=>x.id===st).short)}</div>`:''}</td><td class="small">${h(e.horario||'—')}</td>
-    ${doms.map(d=>`<td><button class="fcell ${cur===d?'on':''}" data-act="fset" data-k="${k}" data-v="${d}" aria-pressed="${cur===d}" aria-label="Folga de ${h(e.name)} no domingo ${fmtDM(d)}">${cur===d?'F':''}</button></td>`).join('')}</tr>`}).join('')}
-  </tbody><tfoot><tr><td class="sticky"><b>De folga</b></td><td></td>${doms.map(d=>{const n=rows.filter(({st,e})=>dom[fkey(st,e)]===d).length;return `<td class="num"><b>${n}</b></td>`}).join('')}</tr></tfoot></table></div>
-  ${(()=>{const sem=rows.filter(({st,e})=>!dom[fkey(st,e)]).map(({e})=>e.name);return sem.length?`<p class="small" style="padding:10px 16px 14px;margin:0"><b>Ainda sem domingo de folga:</b> ${sem.map(h).join(', ')}</p>`:`<p class="small muted" style="padding:10px 16px 14px;margin:0">Todos já têm o domingo de folga do mês.</p>`})()}
+  out+=`<section class="panel"><div class="panel-h"><h2>Escala de folga · ${MESES[m-1]}</h2></div><div class="tablewrap"><table class="grid folg"><thead><tr><th class="sticky">Funcionário</th><th>Domingo fixo</th>${doms.map(d=>`<th>Dom ${fmtDM(d)}</th>`).join('')}</tr></thead><tbody>
+  ${rows.map(({st,e})=>{const k=fkey(st,e);const mp=folgasDom(st,e);const ex=new Set(explicitFolgas(st,e));const n=domFixoOf(st,e);
+    return `<tr><td class="sticky"><b>${h(e.name)}</b>${(()=>{const nv=niverNorm(e.niver);return nv&&+nv.slice(3)===m?`<div class="small" style="color:var(--erva-text);font-weight:700">Aniversário ${nv} · folga</div>`:''})()}${F.store==='todas'&&STORES.length>1?`<div class="small muted">${h(STORES.find(x=>x.id===st).short)}</div>`:''}${e.horario?`<div class="small muted">${h(e.horario)}</div>`:''}</td>
+    <td><select class="fsel" data-act="fdfixo" data-s="${st}" data-id="${e.id}" aria-label="Domingo fixo de ${h(e.name)}">${ORD.map(([v,l])=>`<option value="${v}" ${String(e.domFixo||'')===v?'selected':''}>${l}</option>`).join('')}</select>${!e.domFixo&&n?`<div class="small muted">usando ${n>=5?'último':n+'º'} (do último mês)</div>`:''}</td>
+    ${doms.map(d=>{const f=mp.get(d)||'';const lbl=f==='F'?'F':f==='X'?'F!':f==='A'?'A':'';const tit=f==='X'?'Folga obrigatória: já seriam 4 domingos seguidos':f==='A'?'Aniversário':f==='F'?(ex.has(d)?'Folga trocada neste mês':'Domingo fixo'):'';
+      return `<td><button class="fcell ${f?'on':''} ${f==='X'?'forc':''} ${f==='F'&&ex.has(d)?'troc':''}" data-act="fset" data-k="${k}" data-v="${d}" aria-pressed="${!!f}" title="${tit}" aria-label="Folga de ${h(e.name)} no domingo ${fmtDM(d)}${tit?': '+tit:''}">${lbl}</button></td>`}).join('')}</tr>`}).join('')}
+  </tbody><tfoot><tr><td class="sticky"><b>De folga</b></td><td></td>${doms.map(d=>{const c=rows.filter(({st,e})=>folgasDom(st,e).has(d)).length;return `<td class="num"><b>${c}</b></td>`}).join('')}</tr></tfoot></table></div>
+  <p class="small muted" style="padding:10px 16px 0;margin:0"><b>F</b> = folga · <b>F</b> com borda = trocada só neste mês · <b>F!</b> = folga obrigatória (4º domingo seguido) · <b>A</b> = aniversário</p>
+  ${(()=>{const sem=rows.filter(({st,e})=>!doms.some(d=>folgasDom(st,e).has(d))).map(({e})=>e.name);return sem.length?`<p class="small" style="padding:10px 16px 14px;margin:0"><b>Sem folga de domingo neste mês:</b> ${sem.map(h).join(', ')}. Escolha o domingo fixo de cada um.</p>`:`<p class="small muted" style="padding:10px 16px 14px;margin:0">Todos têm domingo de folga neste mês.</p>`})()}
   </section></div>`;
   return out;
 }
 async function setFolga(k,d){
-  const ym=S.fol.month;const cur=((S.folgas[ym]||{}).dom||{})[k]||'';const v=cur===d?'':d;
-  const f=S.folgas[ym]=Object.assign({},S.folgas[ym]||{});f.dom=Object.assign({},f.dom||{});f.dom[k]=v;render();
-  const ref=S.db.doc('folgas/'+ym);
-  try{try{await ref.update({dom:{[k]:v}})}catch(e){if(e&&e.code==='invalid_argument')await ref.set({mes:ym,dom:{[k]:v}});else throw e}}
-  catch(e){toast('Não foi possível salvar. Só a gestora pode mudar as folgas.')}
+  const [st,...rest]=k.split('_');const id=rest.join('_');const e=((S.cfg[st]||{}).employees||[]).find(x=>x.id===id);if(!e)return;
+  const ym=d.slice(0,7);const mp=folgasDom(st,e);const f=mp.get(d);const exMes=explicitFolgas(st,e).filter(x=>x.slice(0,7)===ym);
+  if(f==='X'){toast('Essa folga é obrigatória: seria o 4º domingo seguido trabalhando.');return}
+  if(f==='A'){toast('Esse domingo já é folga de aniversário.');return}
+  let v;
+  if(f==='F'&&exMes.includes(d)){v=''} // volta para o domingo fixo
+  else if(f==='F'){toast('Esse é o domingo fixo. Para trocar só neste mês, toque no outro domingo.');return}
+  else v=d;
+  // limpa trocas antigas deste mês em qualquer documento e grava no mês do domingo
+  const docs=Object.keys(S.folgas||{}).filter(m=>{const x=((S.folgas[m]||{}).dom||{})[k];return x&&x.slice(0,7)===ym&&m!==ym});
+  const f2=S.folgas[ym]=Object.assign({},S.folgas[ym]||{});f2.dom=Object.assign({},f2.dom||{});f2.dom[k]=v;docs.forEach(m=>{const o=S.folgas[m]=Object.assign({},S.folgas[m]);o.dom=Object.assign({},o.dom);o.dom[k]=''});render();
+  try{for(const m of [ym,...docs]){const ref=S.db.doc('folgas/'+m);const val=m===ym?v:'';try{await ref.update({dom:{[k]:val}})}catch(e2){if(e2&&e2.code==='invalid_argument')await ref.set({mes:m,dom:{[k]:val}});else throw e2}}
+    toast(v?'Folga trocada só em '+MESES[+ym.slice(5)-1].toLowerCase()+': domingo '+fmtDM(v)+'.':'Voltou para o domingo fixo.')}
+  catch(e2){toast('Não foi possível salvar. Só a gestora pode mudar as folgas.')}
 }
+async function setDomFixo(st,id,v){const c=(S.cfgRaw||{})[st]||S.cfg[st];if(!c)return;const emps=(c.employees||[]).map(e=>e.id===id?Object.assign({},e,{domFixo:v}):e);
+  try{await S.db.doc('config/'+st).update({employees:emps});S.edit=null;const e=emps.find(x=>x.id===id);toast(v?'Domingo fixo de '+e.name+': '+(v==='5'?'último':v+'º')+' domingo do mês.':'Domingo fixo de '+e.name+' apagado.')}
+  catch(e){toast('Não foi possível salvar. Só a gestora pode mudar as folgas.')}}
 
 // ---------- relatórios ----------
 function relRange(){const R=S.rel;const t=S.keys.date;
@@ -1257,7 +1300,7 @@ function sheetFolgas(storeSel,ym){
   return `<div class="sheet">${sheetHead('Escala de folga',`<span><b>Empresa:</b> <span class="line">${h(emp)}</span></span>${cnpj?`<span><b>CNPJ:</b> <span class="line">${h(cnpj)}</span></span>`:''}<span><b>Mês:</b> <span class="line">${MESES[m-1]} ${y}</span></span>${storeSel!=='todas'?`<span><b>Loja:</b> <span class="line">${h(storeName(storeSel))}</span></span>`:''}`)}
   <table class="fol"><thead><tr><th rowspan="2" style="width:28px">N.º</th><th rowspan="2">Funcionário</th><th rowspan="2">Horário</th>${weeks.map(w=>`<th colspan="7">Domingo ${Number(addDays(w,6).slice(8))}</th>`).join('')}</tr>
   <tr>${weeks.map(()=>L.map((l,i)=>`<th class="${i===6?'dom':i===0?'sg':''}" style="padding:3px 0">${l}</th>`).join('')).join('')}</tr></thead><tbody>
-  ${rows.map(({st,e},n)=>`<tr><td style="text-align:center">${n+1}</td><td><b>${h(e.name)}</b></td><td style="white-space:nowrap">${h(e.horario||'')}</td>${weeks.map(w=>L.map((l,i)=>{const d=addDays(w,i);return `<td class="c${i===6?' dom':i===0?' sg':''}${isNiver(e,d)&&d.slice(0,7)===ym?' niv':''}">${i===6&&dom[fkey(st,e)]===d?'F':(isNiver(e,d)&&d.slice(0,7)===ym?'A':'')}</td>`}).join('')).join('')}</tr>`).join('')}
+  ${rows.map(({st,e},n)=>`<tr><td style="text-align:center">${n+1}</td><td><b>${h(e.name)}</b></td><td style="white-space:nowrap">${h(e.horario||'')}</td>${weeks.map(w=>L.map((l,i)=>{const d=addDays(w,i);return `<td class="c${i===6?' dom':i===0?' sg':''}${isNiver(e,d)&&d.slice(0,7)===ym?' niv':''}">${(()=>{if(i===6){const f=folgasDom(st,e).get(d);if(f)return f==='A'?'A':'F'}return isNiver(e,d)&&d.slice(0,7)===ym?'A':''})()}</td>`}).join('')).join('')}</tr>`).join('')}
   </tbody></table>
   <div class="sh-foot"><span>F = folga de domingo · A = folga de aniversário · Segunda (coluna cinza): folga de todos, loja fechada.</span><span>Conferência X</span></div></div>`;
 }
@@ -1567,6 +1610,8 @@ function viewConfig(){
   <label class="ef"><span>Turno</span><select data-c="employees" data-i="${i}" data-f="turno">${['manha','noite','todos'].map(t=>`<option value="${t}" ${(e.turno||'todos')===t?'selected':''}>${t==='todos'?'Manhã e noite':TURNOS[t]}</option>`).join('')}</select></label>
   <label class="ef"><span>Checklist de</span><select data-c="employees" data-i="${i}" data-f="funcao">${fOpts(fOf(e),false)}</select></label>
   <label class="ef"><span>Aniversário</span><input type="text" id="c-employees-${i}-niver" data-c="employees" data-i="${i}" data-f="niver" value="${h(e.niver||'')}" placeholder="dd/mm" inputmode="numeric" maxlength="5"></label>
+  <label class="ef"><span>Início na empresa</span><input type="date" data-c="employees" data-i="${i}" data-f="admissao" value="${h(e.admissao||'')}"></label>
+  <label class="ef"><span>Domingo de folga</span><select data-c="employees" data-i="${i}" data-f="domFixo">${[['','—'],['1','1º do mês'],['2','2º do mês'],['3','3º do mês'],['4','4º do mês'],['5','Último do mês']].map(([v,l])=>`<option value="${v}" ${String(e.domFixo||'')===v?'selected':''}>${l}</option>`).join('')}</select></label>
   <label class="ef"><span>Horário</span><input type="text" id="c-employees-${i}-horario" data-c="employees" data-i="${i}" data-f="horario" value="${h(e.horario||'')}" placeholder="ex.: 17:05 às 01:00"></label>
   </div><div class="emp-actions"><label class="small" style="display:flex;gap:6px;align-items:center;white-space:nowrap;font-weight:700"><input type="checkbox" data-c="employees" data-i="${i}" data-f="lider" ${e.lider?'checked':''} style="width:20px;height:20px"> Líder (faz a conferência final)</label><span style="flex:1"></span><button class="btn small" data-act="csaiu" data-i="${i}" style="white-space:nowrap">${S.saiuArm===i?'Confirmar saída':'Saiu da empresa'}</button><button class="btn ghost small" data-act="cdel" data-v="employees" data-i="${i}" style="color:var(--bad)">Apagar</button></div></div>`).join('')+((E.exFunc||[]).length?`<div class="small muted" style="margin:14px 0 6px;font-weight:700;text-transform:uppercase;letter-spacing:.05em">Saíram da empresa</div>`+(E.exFunc||[]).map((e,i)=>`<div class="edit-row" style="display:flex;gap:8px;align-items:center;justify-content:space-between"><span>${h(e.name)} <span class="small muted">· saiu em ${fmtDate(e.saiu||S.keys.date)}</span></span><button class="btn small" data-act="cvoltou" data-i="${i}">Voltou</button></div>`).join(''):''),'+ Funcionário','Coloque o aniversário como dia/mês (ex.: 15/03): ele aparece no Painel e a pessoa recebe um parabéns ao entrar. A função define qual checklist a pessoa vê. Quem é marcado como Líder também faz a conferência final do fechamento. Só quem é da cozinha entra no rodízio de limpeza. Quem entra ou sai muda a vez a partir desta semana.');
     out+=sec('Tarefas do checklist','tasks',(E.tasks||[]).map((t,i)=>`<div class="edit-row task"><input type="text" id="c-tasks-${i}-title" data-c="tasks" data-i="${i}" data-f="title" value="${h(t.title)}" aria-label="Tarefa"><select data-c="tasks" data-i="${i}" data-f="phase" aria-label="Momento">${PHASES.map(([p,l])=>`<option value="${p}" ${t.phase===p?'selected':''}>${l}</option>`).join('')}</select><select data-c="tasks" data-i="${i}" data-f="turno" aria-label="Turno">${tOpts(t.turno||'todos')}</select><select data-c="tasks" data-i="${i}" data-f="funcao" aria-label="Função">${fOpts(fOf(t),true)}</select><label class="small" style="display:flex;gap:4px;align-items:center;white-space:nowrap"><input type="checkbox" data-c="tasks" data-i="${i}" data-f="valor" ${t.valor?'checked':''}> Pede valor</label><button class="x" data-act="cdel" data-v="tasks" data-i="${i}" aria-label="Remover">×</button></div>`).join(''),'+ Tarefa','"Pede valor" serve para anotar número, como a temperatura da geladeira.');
@@ -1753,6 +1798,7 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='modal'){e.targ
 document.addEventListener('change',e=>{
   const t=e.target;
   if(t.dataset.act==='nlmod'){S.novaLoja.mods[t.dataset.v]=t.checked;return}
+  if(t.dataset.act==='fdfixo'){setDomFixo(t.dataset.s,t.dataset.id,t.value);return}
   if(t.id==='bk-in'){backupImport(t.files&&t.files[0]);return}
   if(t.id==='foto-in'){fotoEscolhida(t.files&&t.files[0]);return}
   if(t.id==='c-fotolimpeza'){S.edit.fotoLimpeza=t.checked;S.dirty=true;render();return}
