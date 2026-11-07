@@ -387,7 +387,7 @@ const FUNCOES={cozinha:'Cozinha',atendimento:'Atendimento',gestor:'Gestor (as du
 function isGestorF(e){return fOf(e)==='gestor'}
 function fOf(x){return (x&&x.funcao)||'cozinha'}
 function matchF(tf,ef){return tf==='todos'||tf===ef}
-function canSee(t,emp){const tf=fOf(t);return tf==='todos'||tf===fOf(emp)||(tf==='lider'&&!!(emp&&emp.lider))}
+function canSee(t,emp){if(S.gestora&&!emp)return true;const tf=fOf(t);return tf==='todos'||tf===fOf(emp)||(tf==='lider'&&!!(emp&&emp.lider))}
 const PHASES=[['abertura','Abertura'],['turno','Durante o turno'],['banheiro','Higienização do banheiro'],['salao','Limpeza do salão'],['fechamento','Fechamento'],['lider','Conferência final da líder']];
 const CHECK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
@@ -802,15 +802,17 @@ function setupPanel(){
     </div>${(()=>{const pf=isGestorF(e)?'':proximaFolga(S.store,e);return pf?`<div class="folga-me">Sua próxima folga${isNiver(e,pf)?' (aniversário)':' de domingo'}: <b>${fmtDate(pf)}</b></div>`:''})()}<p class="small muted" style="margin:10px 0 0">${fmtDate(S.keys.date)} · o dia vira às 05h, então o fechamento depois da meia-noite conta no mesmo dia.</p></div></section>${S.readOnly?`<div class="notice">Seu acesso é só de visualização. Peça à gestora para liberar você como colaborador.</div>`:''}`;
   }
   const emps=(c.employees||[]).filter(e=>mT(e.turno,S.turno,S.store));
+  if(S.gestora&&!emps.some(e=>e.name===S.me))S.me='Gestora';
   return `<section class="panel"><div class="panel-b"><div class="setup">
     <div class="field"><span class="label">Loja</span>${seg('store',S.store,STORES.map(s=>[s.id,s.short]))}</div>
     ${ts.length>1?`<div class="field"><span class="label">Turno</span>${seg('turno',S.turno,ts.map(t=>[t,TURNOS[t]]))}</div>`:`<div class="field"><span class="label">Turno</span><div class="seg"><button aria-pressed="true" disabled>${TURNOS[ts[0]]}</button></div></div>`}
   </div>
-  <div class="field" style="margin-top:12px"><span class="label">Seu nome</span>${emps.length?pick('mebtn',S.me,emps.map(e=>[e.name,e.name])):'<span class="small muted">Nenhum funcionário neste turno.</span>'}</div>
+  <div class="field" style="margin-top:12px"><span class="label">${S.gestora?'Anotar como':'Seu nome'}</span>${S.gestora?pick('mebtn',S.me,[['Gestora','Gestora (você)'],...emps.map(e=>[e.name,e.name])]):emps.length?pick('mebtn',S.me,emps.map(e=>[e.name,e.name])):'<span class="small muted">Nenhum funcionário neste turno.</span>'}</div>
+  ${S.gestora?'<p class="small muted" style="margin:6px 0 0">Você já pode ver e preencher tudo como <b>Gestora</b>. Só escolha um nome se for marcar algo no lugar de alguém.</p>':''}
   <p class="small muted" style="margin:10px 0 0">${fmtDate(S.keys.date)} · o dia vira às 05h, então o fechamento depois da meia-noite conta no mesmo dia.</p>
-  </div></section>${!emps.some(e=>e.name===S.me)?`<div class="notice">Toque no seu nome acima para começar.</div>`:''}${S.readOnly?`<div class="notice">Seu acesso é só de visualização. Peça à gestora para liberar você como colaborador.</div>`:''}`;
+  </div></section>${!S.gestora&&!emps.some(e=>e.name===S.me)?`<div class="notice">Toque no seu nome acima para começar.</div>`:''}${S.readOnly?`<div class="notice">Seu acesso é só de visualização. Peça à gestora para liberar você como colaborador.</div>`:''}`;
 }
-function meOk(){const c=S.cfg[S.store];return (c.employees||[]).some(e=>mT(e.turno,S.turno,S.store)&&e.name===S.me)}
+function meOk(){if(S.gestora)return true;const c=S.cfg[S.store];return (c.employees||[]).some(e=>mT(e.turno,S.turno,S.store)&&e.name===S.me)}
 
 const BS=['banheiro','salao'];
 function temBS(store,turno,emp){const c=S.cfg[store];return !!c&&(c.tasks||[]).some(t=>BS.includes(t.phase)&&tarefaDia(t,turno,store)&&canSee(t,emp))}
@@ -835,7 +837,7 @@ function viewChecklist(mode){
     return out+'</div>';
   }
   const nDone=tasks.filter(t=>(done[S.turno+'__'+t.id]||{}).done).length;
-  out+=`<section class="panel"><div class="panel-h"><h2>Checklist ${myF==='atendimento'?'do atendimento':'da cozinha'}${emp&&emp.lider?' <span class="chip me" style="font-family:var(--body);vertical-align:middle">Líder</span>':''}</h2><div style="min-width:180px;flex:1;max-width:280px">${bar(nDone,tasks.length)}</div></div><div class="panel-b">`;
+  out+=`<section class="panel"><div class="panel-h"><h2>Checklist ${S.gestora&&!emp?'(todas as funções)':myF==='atendimento'?'do atendimento':'da cozinha'}${emp&&emp.lider?' <span class="chip me" style="font-family:var(--body);vertical-align:middle">Líder</span>':''}</h2><div style="min-width:180px;flex:1;max-width:280px">${bar(nDone,tasks.length)}</div></div><div class="panel-b">`;
   PHASES.forEach(([ph,label])=>{
     const list=tasks.filter(t=>(t.phase||'turno')===ph);if(!list.length)return;
     out+=`<div class="phase"><div class="label">${label}</div><div class="rows">`;
