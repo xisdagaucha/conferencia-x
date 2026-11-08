@@ -195,7 +195,12 @@ select,input[type=text],input[type=number],input[type=date]{background:var(--sur
 .ccard.mine{border-color:var(--brasa);background:var(--brasa-soft)}
 .ccard .t{font-weight:700;font-size:16px}
 .ccard .cday{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.ccard.atrasado{border-color:var(--bad);background:var(--bad-soft)}
+.ccard.atrasado{border:2px solid #d22f27;background:#fbdedb}
+.ccard.atrasado .cday{color:#a3211b}
+.ccard.feito{border:2px solid #2f7fd8;background:#e3eefc}
+.ccard.feito .chip.ok{background:#cfe1f9;color:#14427e;border-color:#a6c6f0}
+.ccard.mine.hoje,.ccard.mine.pendente{border:2px solid #e8892b;background:#fdebd6}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .ccard.atrasado{background:#3a1512;border-color:#ef5a50}:root:not([data-theme="light"]) .ccard.atrasado .cday{color:#ff8a80}:root:not([data-theme="light"]) .ccard.feito{background:#11243d;border-color:#5aa0ee}:root:not([data-theme="light"]) .ccard.feito .chip.ok{background:#1b3a63;color:#cfe3ff;border-color:#2f5f9a}:root:not([data-theme="light"]) .ccard.mine.hoje,:root:not([data-theme="light"]) .ccard.mine.pendente{background:#382411;border-color:#f0923a}}
 .edit-area{border-bottom:1px solid var(--line);padding-block:6px}
 .edit-row.area1{grid-template-columns:130px 1fr 100px 130px auto;padding-block:2px}
 .edit-row.area2{grid-template-columns:1fr 1fr 1fr 1fr;padding-block:2px}
