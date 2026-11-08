@@ -375,6 +375,16 @@ table.folg tfoot td{border-top:2px solid var(--line)}
 .refaz-open{color:#a3174b}
 .refaz-bar{align-items:center}
 .chip.refaz{background:#fde7ef;color:#a3174b;border-color:#f6b6cc}
+.who{position:relative}
+.bell{position:relative;font-size:20px;line-height:1;background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:999px;min-width:42px;min-height:40px;cursor:pointer;color:#fff}
+.bdg{position:absolute;top:-6px;right:-6px;background:#e0457b;color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:999px;display:flex;align-items:center;justify-content:center;padding:0 5px}
+.npop{position:absolute;top:calc(100% + 8px);right:0;z-index:60;width:min(380px,calc(100vw - 32px));background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:16px;box-shadow:0 14px 40px rgba(0,0,0,.25);text-align:left}
+.npop-h{display:flex;justify-content:space-between;align-items:center;padding:10px 12px}
+.npop-list{max-height:60vh;overflow:auto;border-top:1px solid var(--line)}
+.nitem>div,.nitem .nlink{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-bottom:1px solid var(--line);width:100%;background:none;border-left:0;border-right:0;border-top:0;font:inherit;color:inherit;text-align:left;cursor:default}
+.nitem .nlink{cursor:pointer}
+.nitem.novo>div,.nitem.novo .nlink{background:#eafbe9}
+.nic{font-size:18px}.ntx{display:flex;flex-direction:column;gap:2px;font-size:14px;font-weight:600}.ntx small{font-weight:400;color:var(--muted);font-size:12px}
 </style>
 
 <header class="brandbar"><div class="wrap">
@@ -782,10 +792,28 @@ async function gCreate(){
 }
 
 // ---------- render ----------
+// ---------- avisos para a gestora (limpezas feitas e observações) ----------
+function notifEventos(){if(!S.gestora)return [];const L=[];
+  STORES.forEach(st=>{const ar=((S.week[st.id]||{}).areas)||{};const c=S.cfg[st.id]||{};
+    Object.entries(ar).forEach(([id,r])=>{if(r&&r.done&&r.at&&r.by!=='Gestora'){const a=(c.areas||[]).find(x=>x.id===id);L.push({id:'l'+st.id+id+r.at,at:r.at,ic:'🧽',txt:`${(a&&a.name)||r.name||'Limpeza'}: limpeza feita por ${r.by}`+(r.foto?' 📷':''),store:st.id,aid:id,foto:!!r.foto})}});
+    obsList(st.id).forEach(o=>{if(!o.ok&&o.at&&o.by!=='Gestora')L.push({id:'o'+o.id,at:o.at,ic:'📝',txt:`${o.by}: ${o.txt}`,store:st.id})})});
+  return L.sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,40)}
+function notifNaoLidas(){const seen=ls.get('xg_nseen')||'';return notifEventos().filter(e=>e.at>seen).length}
+function notifAvisar(){if(!S.gestora||!S.cfgLoaded)return;const ev=notifEventos();if(!ev.length)return;const top=ev[0].at;
+  let last=ls.get('xg_nlast');if(!last){ls.set('xg_nlast',top);return}
+  const novos=ev.filter(e=>e.at>last&&Date.now()-Date.parse(e.at)<20*60000).reverse();if(top>last)ls.set('xg_nlast',top);
+  novos.forEach(e=>{const body=e.ic+' '+e.txt+' · '+((STORES.find(x=>x.id===e.store)||{}).short||'');toast(body);
+    try{if('Notification' in window&&Notification.permission==='granted'){const opt={body,icon:'cx-icon-192.png',badge:'cx-icon-192.png',tag:e.id};
+      if(navigator.serviceWorker&&navigator.serviceWorker.ready)navigator.serviceWorker.ready.then(r=>r.showNotification('Conferência X',opt)).catch(()=>{try{new Notification('Conferência X',opt)}catch(x){}});else new Notification('Conferência X',opt)}}catch(x){}})}
+function notifPainel(){const ev=notifEventos();const seen=S.notifSeen||'';
+  return `<div class="npop" role="dialog" aria-label="Avisos"><div class="npop-h"><b>Avisos</b><button class="btn ghost small" data-act="notif">Fechar</button></div>
+  ${'Notification' in window&&Notification.permission!=='granted'?`<button class="btn primary small" data-act="notifperm" style="margin:0 12px 8px">🔔 Avisar também no aparelho</button>`:''}
+  <div class="npop-list">${ev.length?ev.map(e=>`<div class="nitem ${e.at>seen?'novo':''}">${e.foto?`<button class="nlink" data-act="verfoto" data-s="${e.store}" data-w="${S.keys.week}" data-a="${e.aid}">`:'<div>'}<span class="nic">${e.ic}</span><span class="ntx">${h(e.txt)}<small>${h((STORES.find(x=>x.id===e.store)||{}).short||'')} · ${fmtWhen(e.at)}</small></span>${e.foto?'</button>':'</div>'}</div>`).join(''):'<div class="small muted" style="padding:12px">Nenhum aviso nesta semana ainda.</div>'}</div></div>`}
 function render(){
   const ae=document.activeElement;const keep=ae&&ae.id?{id:ae.id,v:ae.value,s:ae.selectionStart}:null;
   const roleEl=document.getElementById('role');
-  roleEl.innerHTML=S.auth?`<span class="nm">${h(S.auth.role==='gest'?'Gestora':(S.auth.name||''))}</span><button class="out" data-act="logout">Sair</button>`:`<span class="role">${S.db?'Entrar':'Carregando…'}</span>`;
+  try{notifAvisar()}catch(e){}
+  roleEl.innerHTML=S.auth?`${S.gestora?(()=>{const n=notifNaoLidas();return `<button class="bell" data-act="notif" aria-label="Avisos${n?': '+n+' novos':''}" aria-expanded="${!!S.notifOpen}">🔔${n?`<span class="bdg">${n>9?'9+':n}</span>`:''}</button>`})():''}<span class="nm">${h(S.auth.role==='gest'?'Gestora':(S.auth.name||''))}</span><button class="out" data-act="logout">Sair</button>${S.gestora&&S.notifOpen?notifPainel():''}`:`<span class="role">${S.db?'Entrar':'Carregando…'}</span>`;
   const tabsEl=document.getElementById('tabs');
   if(S.db&&S.cfgLoaded&&S.accLoaded&&!S.auth){tabsEl.hidden=true;tabsEl.innerHTML='';document.getElementById('view').innerHTML=viewLogin();if(keep){const el=document.getElementById(keep.id);if(el)el.focus()}return}
   const tile=([id,l])=>`<button class="tab" data-act="tab" data-v="${id}" aria-selected="${S.tab===id}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[id]||''}</svg><span>${l}</span></button>`;
@@ -1721,6 +1749,8 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='modal'){e.targ
     const st=S.store;clearTimeout(commitT[key]);commitT[key]=setTimeout(()=>commitProd(st,id),900);return}
   if(a==='rsep'){if(S.readOnly){toast('Seu acesso é só de visualização.');return}const it=(c.items||[]).find(x=>x.id===id);if(!it)return;const r=itemRec(repoDay(S.store).items,id);markSep(S.store,it,!r.sep);if(!r.sep)toast(it.name+' separado.');return}
   if(a==='reposo'){S.repoSoSep=!S.repoSoSep;render();return}
+  if(a==='notif'){S.notifOpen=!S.notifOpen;if(S.notifOpen){S.notifSeen=ls.get('xg_nseen')||'';const ev=notifEventos();if(ev.length)ls.set('xg_nseen',ev[0].at)}render();return}
+  if(a==='notifperm'){try{Notification.requestPermission().then(p=>{toast(p==='granted'?'Pronto! Os avisos vão aparecer no aparelho enquanto o app estiver aberto.':'O aparelho não deixou mostrar avisos. Dá para liberar nas configurações do navegador.');render()})}catch(e){toast('Este aparelho não aceita avisos.')}return}
   if(a==='refazarm'){S.refazArm=v||null;render();if(S.fotoView)fotoModal();return}
   if(a==='refazer'){refazer(b.dataset.s,id,v);return}
   if(a==='cobrar'){cobrar(b.dataset.s,id,v);return}
