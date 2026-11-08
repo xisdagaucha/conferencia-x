@@ -364,6 +364,12 @@ table.folg tfoot td{border-top:2px solid var(--line)}
 .fcell.forc{background:#e8a33d;border-color:#e8a33d;color:#1a1200}
 .fcell.troc{outline:3px solid var(--ink);outline-offset:-3px}
 .fsel{font:inherit;font-size:13px;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.reac-bar{display:inline-flex;gap:4px;flex-wrap:wrap;vertical-align:middle;margin:4px 0 0 4px}
+.reac-btn{font-size:18px;line-height:1;min-width:38px;min-height:38px;border-radius:999px;border:1px solid var(--line);background:var(--surface);cursor:pointer;opacity:.6;filter:grayscale(.4)}
+.reac-btn:hover{opacity:1;filter:none}
+.reac-btn.on{opacity:1;filter:none;border-color:#e0457b;background:#fde7ef;box-shadow:0 0 0 2px #e0457b33}
+.chip.reac{background:#fde7ef;color:#a3174b;border-color:#f6b6cc;font-weight:800}
+.reac-modal{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-top:1px solid rgba(0,0,0,.08)}
 </style>
 
 <header class="brandbar"><div class="wrap">
@@ -460,12 +466,12 @@ async function fotoEscolhida(file){
 }
 async function fotoDoc(p){let d=S.fotoCache[p];if(!d){const s=await S.db.doc(p).get();d=s.exists?s.data():null;if(d)S.fotoCache[p]=d}return d}
 function fotoModal(){const V=S.fotoView;const m=document.getElementById('modal');if(!V)return;const d=V.list[V.i];const n=V.list.length;
-  m.innerHTML=`<div class="mbox"><img src="${d.img}" alt="Foto ${V.i+1} da limpeza: ${h(d.name)}"><div class="mcap"><div><b>${h(d.name)}</b>${n>1?` <span class="chip num">Foto ${V.i+1} de ${n}</span>`:''}<div class="small muted">${h(d.by)} · ${fmtWhen(d.at)} · ${h(storeName(V.store))}</div></div><div style="display:flex;gap:6px">${n>1?`<button class="btn" data-act="fotonav" data-v="-1" aria-label="Foto anterior" ${V.i===0?'disabled':''}>‹</button><button class="btn" data-act="fotonav" data-v="1" aria-label="Próxima foto" ${V.i===n-1?'disabled':''}>›</button>`:''}<button class="btn" data-act="fechafoto">Fechar</button></div></div></div>`}
+  m.innerHTML=`<div class="mbox"><img src="${d.img}" alt="Foto ${V.i+1} da limpeza: ${h(d.name)}"><div class="mcap"><div><b>${h(d.name)}</b>${n>1?` <span class="chip num">Foto ${V.i+1} de ${n}</span>`:''}<div class="small muted">${h(d.by)} · ${fmtWhen(d.at)} · ${h(storeName(V.store))}</div></div><div style="display:flex;gap:6px">${n>1?`<button class="btn" data-act="fotonav" data-v="-1" aria-label="Foto anterior" ${V.i===0?'disabled':''}>‹</button><button class="btn" data-act="fotonav" data-v="1" aria-label="Próxima foto" ${V.i===n-1?'disabled':''}>›</button>`:''}<button class="btn" data-act="fechafoto">Fechar</button></div></div>${S.gestora&&V.week===S.keys.week?(()=>{const r=((S.week[V.store]||{}).areas||{})[V.aid]||{};return r.done?`<div class="reac-modal"><span class="small" style="font-weight:700">Deixe uma reação para quem limpou:</span>${reacaoBtns(V.store,V.aid,r)}</div>`:''})():''}</div>`}
 async function verFoto(store,week,aid){
   const p=fotoPath(store,week,aid);const m=document.getElementById('modal');
   m.hidden=false;m.innerHTML='<div class="mbox"><div class="empty">Carregando foto…</div></div>';
   try{const d=await fotoDoc(p);
-    if(d){const list=[d];for(let k=2;k<=MAXFOTOS;k++){const x=await fotoDoc(p+'_'+k);if(!x)break;list.push(x)}S.fotoView={store,list,i:0};fotoModal();return}
+    if(d){const list=[d];for(let k=2;k<=MAXFOTOS;k++){const x=await fotoDoc(p+'_'+k);if(!x)break;list.push(x)}S.fotoView={store,week,aid,list,i:0};fotoModal();return}
     m.innerHTML=d?`<div class="mbox"><img src="${d.img}" alt="Foto da limpeza: ${h(d.name)}"><div class="mcap"><div><b>${h(d.name)}</b><div class="small muted">${h(d.by)} · ${fmtWhen(d.at)} · ${h(storeName(store))}</div></div><button class="btn" data-act="fechafoto">Fechar</button></div></div>`
       :`<div class="mbox"><div class="empty">Foto não encontrada.</div><div class="mcap"><span></span><button class="btn" data-act="fechafoto">Fechar</button></div></div>`}
   catch(e){m.innerHTML='<div class="mbox"><div class="empty">Não foi possível abrir a foto.</div><div class="mcap"><span></span><button class="btn" data-act="fechafoto">Fechar</button></div></div>'}
@@ -478,7 +484,14 @@ function diaOrd(d){if(d===''||d==null)return 99;return d==0?7:+d}
 function hojeDow(){return new Date(S.keys.date+'T00:00:00Z').getUTCDay()}
 function dataDoDia(d){if(d===''||d==null)return null;return addDays(S.keys.week,diaOrd(d)-1)}
 function areaEstado(a,r){if(r&&r.done)return 'feito';const o=diaOrd(a.dia),t=diaOrd(hojeDow());if(o===99)return 'pendente';return o<t?'atrasado':o===t?'hoje':'pendente'}
-function estadoChip(a,r,store){return estadoChip0(a,r)+(store&&r&&r.done&&r.foto?fotoBtn(store,S.keys.week,a.id):'')}
+const REACOES=['❤️','👏','⭐','👍','🔥'];
+function reacaoChip(r){return r&&r.done&&r.reacao?`<span class="chip reac" title="A gestora viu esta limpeza">${r.reacao} Gestora viu</span>`:''}
+function reacaoBtns(store,aid,r){if(!S.gestora||!r||!r.done)return '';return `<span class="reac-bar" role="group" aria-label="Reagir à limpeza">${REACOES.map(e=>`<button class="reac-btn ${r.reacao===e?'on':''}" data-act="reagir" data-s="${store}" data-id="${aid}" data-v="${e}" aria-pressed="${r.reacao===e}" title="${r.reacao===e?'Tirar reação':'Reagir com '+e}">${e}</button>`).join('')}</span>`}
+function reagir(store,aid,emo){const w=S.week[store]=Object.assign({},S.week[store]||{});w.areas=Object.assign({},w.areas||{});const r=w.areas[aid]||{};if(!r.done){toast('Só dá para reagir a limpezas já feitas.');return}
+  const v=r.reacao===emo?'':emo;w.areas[aid]=Object.assign({},r,{reacao:v,reacaoAt:new Date().toISOString()});render();if(S.fotoView&&S.fotoView.aid===aid)fotoModal();
+  toast(v?'Reação enviada: '+v+' — quem limpou vai ver.':'Reação retirada.');
+  write('weeks/'+store+'_'+S.keys.week,S.weekExists[store],{store,week:S.keys.week},{areas:{[aid]:{reacao:v,reacaoAt:w.areas[aid].reacaoAt}}})}
+function estadoChip(a,r,store){return estadoChip0(a,r)+(store&&r&&r.done&&r.foto?fotoBtn(store,S.keys.week,a.id):'')+reacaoChip(r)+(store?reacaoBtns(store,a.id,r):'')}
 function fotoBtn(store,week,aid){const nf=week===S.keys.week?((((S.week[store]||{}).areas||{})[aid]||{}).nf||1):1;return `<button class="btn small fbtn" data-act="verfoto" data-s="${store}" data-w="${week}" data-a="${aid}" aria-label="Ver ${nf>1?nf+' fotos':'foto'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>${nf>1?nf+' fotos':'Foto'}</button>`}
 function estadoChip0(a,r){const e=areaEstado(a,r);return e==='feito'?`<span class="chip ok" title="${h(fmtWhen(r.at))}">Limpo · ${h(r.by)} ${fmtTime(r.at)}</span>`:e==='atrasado'?'<span class="chip bad">Atrasado</span>':e==='hoje'?'<span class="chip me">Hoje</span>':'<span class="chip">Pendente</span>'}
 function sortAreas(list){return list.slice().sort((a,b)=>diaOrd(a.dia)-diaOrd(b.dia))}
@@ -624,7 +637,7 @@ function markItem(store,turno,item,tem,precisa){
 }
 function markArea(store,area,done,resp,foto){
   const k=S.keys;
-  const rec={done,by:S.me,at:new Date().toISOString(),name:area.name,resp,foto:!!(done&&foto)};
+  const rec={done,by:S.me,at:new Date().toISOString(),name:area.name,resp,foto:!!(done&&foto),reacao:''};
   const path='weeks/'+store+'_'+k.week;
   const w=S.week[store]=Object.assign({},S.week[store]||{});w.areas=Object.assign({},w.areas||{});w.areas[area.id]=rec;render();
   write(path,S.weekExists[store],{store,week:k.week},{areas:{[area.id]:rec}});
@@ -856,11 +869,11 @@ function viewChecklist(mode){
   if(!mine.length)out+=`<p class="muted" style="margin:0 0 12px">Nenhuma limpeza pesada ficou com você nesta semana.</p>`;
   else out+=`<div class="clean" style="margin-bottom:14px">${mine.map(a=>{const r=wk[a.id]||{};const e=areaEstado(a,r);const dd=dataDoDia(a.dia);return `<div class="ccard mine ${e}"><div class="cday"><b>${diaNome(a.dia)}${dd?' '+fmtDM(dd):''}</b>${e==='atrasado'?'<span class="chip bad">Atrasado</span>':e==='hoje'?'<span class="chip me">Hoje</span>':''}</div><div class="t">${h(a.name)}</div>
     ${a.proc?`<div class="small"><span class="muted">Como:</span> ${h(a.proc)}</div>`:''}${a.prod?`<div class="small"><span class="muted">Produto:</span> ${h(a.prod)}</div>`:''}
-    ${r.done?`<span class="chip ok">Limpo por ${h(r.by)} · ${fmtWhen(r.at)}</span><div style="display:flex;gap:6px;flex-wrap:wrap">${r.foto?fotoBtn(S.store,S.keys.week,a.id):''}${S.upl===a.id?'<button class="btn small" disabled>Enviando foto…</button>':r.foto?((r.nf||1)<MAXFOTOS?`<button class="btn small" data-act="fotomais" data-id="${a.id}">${CAM}+ Mais uma foto</button>`:''):`<button class="btn ghost small" data-act="fotoarea" data-id="${a.id}">Enviar foto</button>`}<button class="btn ghost small" data-act="area" data-id="${a.id}" data-v="0">Desfazer</button></div>`
+    ${r.done?`<span class="chip ok">Limpo por ${h(r.by)} · ${fmtWhen(r.at)}</span><div style="display:flex;gap:6px;flex-wrap:wrap">${r.foto?fotoBtn(S.store,S.keys.week,a.id):''}${S.upl===a.id?'<button class="btn small" disabled>Enviando foto…</button>':r.foto?((r.nf||1)<MAXFOTOS?`<button class="btn small" data-act="fotomais" data-id="${a.id}">${CAM}+ Mais uma foto</button>`:''):`<button class="btn ghost small" data-act="fotoarea" data-id="${a.id}">Enviar foto</button>`}<button class="btn ghost small" data-act="area" data-id="${a.id}" data-v="0">Desfazer</button>${reacaoChip(r)}${reacaoBtns(S.store,a.id,r)}</div>`
       :(S.upl===a.id?`<button class="btn primary" disabled>Enviando foto…</button>`:fotoObrig(S.store)?`<button class="btn primary cam" data-act="fotoarea" data-id="${a.id}">${CAM}Tirar foto e marcar como limpo</button>`:`<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn primary cam" data-act="fotoarea" data-id="${a.id}">${CAM}Foto e limpo</button><button class="btn" data-act="area" data-id="${a.id}" data-v="1">Limpo sem foto</button></div>`)}</div>`}).join('')}</div>`;
   if(others.length){
     out+=`<div class="label" style="margin-bottom:6px">Resto da equipe nesta semana</div><p class="small muted" style="margin:0 0 8px">Limpou a área de um colega (falta, troca ou ele estava ocupado)? Toque em “Eu limpei”.</p><div class="rows">${others.map(a=>{const r=wk[a.id]||{};const resp=rot[a.id];
-      const acts=r.done?(r.by===S.me?`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="chip ok">Limpo por você</span>${r.foto?fotoBtn(S.store,S.keys.week,a.id):''}${S.upl===a.id?'<button class="btn small" disabled>Enviando…</button>':r.foto&&(r.nf||1)<MAXFOTOS?`<button class="btn small" data-act="fotomais" data-id="${a.id}">+ Foto</button>`:''}<button class="btn ghost small" data-act="area" data-id="${a.id}" data-v="0">Desfazer</button></div>`:estadoChip(a,r,S.store))
+      const acts=r.done?(r.by===S.me?`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="chip ok">Limpo por você</span>${r.foto?fotoBtn(S.store,S.keys.week,a.id):''}${S.upl===a.id?'<button class="btn small" disabled>Enviando…</button>':r.foto&&(r.nf||1)<MAXFOTOS?`<button class="btn small" data-act="fotomais" data-id="${a.id}">+ Foto</button>`:''}<button class="btn ghost small" data-act="area" data-id="${a.id}" data-v="0">Desfazer</button>${reacaoChip(r)}${reacaoBtns(S.store,a.id,r)}</div>`:estadoChip(a,r,S.store))
         :S.upl===a.id?`<button class="btn primary small" disabled>Enviando foto…</button>`
         :S.cobrir===a.id?`<div style="display:flex;gap:6px;flex-wrap:wrap">${fotoObrig(S.store)?`<button class="btn primary cam small" data-act="fotoarea" data-id="${a.id}">${CAM}Tirar foto e marcar</button>`:`<button class="btn primary cam small" data-act="fotoarea" data-id="${a.id}">${CAM}Foto e limpo</button><button class="btn small" data-act="area" data-id="${a.id}" data-v="1">Limpo sem foto</button>`}<button class="btn ghost small" data-act="cobrir" data-id="">Cancelar</button></div>`
         :`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${estadoChip(a,r,S.store)}<button class="btn small" data-act="cobrir" data-id="${a.id}">Eu limpei</button></div>`;
@@ -1441,7 +1454,7 @@ function viewRodizio(){
   const weeks=offs.map(o=>{const m=addDays(S.keys.week,7*o);return {o,m,wk:weekIdx(m),rot:rotation(s,weekIdx(m))}});
   const wk=(S.week[s]||{}).areas||{};
   out+=`<section class="panel"><div class="panel-h"><h2>${h(rotPerLabel(per))}</h2></div><div class="tablewrap"><table><thead><tr><th>Dia</th><th>Área</th>${weeks.map(w=>`<th>${w.o===0?'Esta semana':'Semana '+fmtDM(w.m)}</th>`).join('')}</tr></thead><tbody>
-  ${sortAreas(c.areas||[]).map(a=>`<tr><td>${diaNome(a.dia)}</td><td><b>${h(a.name)}</b>${a.prod?`<div class="small muted">${h(a.prod)}</div>`:''}</td>${weeks.map(w=>{const r=wk[a.id]||{};return `<td>${h(w.rot[a.id])}${w.o===0?'<br>'+(r.done?`<span class="chip ok">Limpo ${fmtWhen(r.at).slice(0,5)}${r.by&&r.by!==w.rot[a.id]?' por '+h(r.by):''}</span>`:estadoChip(a,r,s)):''}</td>`}).join('')}</tr>`).join('')}
+  ${sortAreas(c.areas||[]).map(a=>`<tr><td>${diaNome(a.dia)}</td><td><b>${h(a.name)}</b>${a.prod?`<div class="small muted">${h(a.prod)}</div>`:''}</td>${weeks.map(w=>{const r=wk[a.id]||{};return `<td>${h(w.rot[a.id])}${w.o===0?'<br>'+(r.done?`<span class="chip ok">Limpo ${fmtWhen(r.at).slice(0,5)}${r.by&&r.by!==w.rot[a.id]?' por '+h(r.by):''}</span>${r.foto?fotoBtn(s,S.keys.week,a.id):''}${reacaoBtns(s,a.id,r)}`:estadoChip(a,r,s)):''}</td>`}).join('')}</tr>`).join('')}
   </tbody></table></div></section>`;
   // justiça: contagem por pessoa no período
   const cnt={};(c.employees||[]).filter(e=>!isGestorF(e)).forEach(e=>cnt[e.name]=0);
@@ -1688,6 +1701,7 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='modal'){e.targ
     const st=S.store;clearTimeout(commitT[key]);commitT[key]=setTimeout(()=>commitProd(st,id),900);return}
   if(a==='rsep'){if(S.readOnly){toast('Seu acesso é só de visualização.');return}const it=(c.items||[]).find(x=>x.id===id);if(!it)return;const r=itemRec(repoDay(S.store).items,id);markSep(S.store,it,!r.sep);if(!r.sep)toast(it.name+' separado.');return}
   if(a==='reposo'){S.repoSoSep=!S.repoSoSep;render();return}
+  if(a==='reagir'){reagir(b.dataset.s,id,v);return}
   if(a==='obsadd'){obsAdd(b.dataset.s);return}
   if(a==='obsok'){obsOk(b.dataset.s,id);return}
   if(a==='parab'){enviarParab(b.dataset.s,id);return}
