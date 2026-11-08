@@ -370,6 +370,8 @@ table.folg tfoot td{border-top:2px solid var(--line)}
 .reac-btn.on{opacity:1;filter:none;border-color:#e0457b;background:#fde7ef;box-shadow:0 0 0 2px #e0457b33}
 .chip.reac{background:#fde7ef;color:#a3174b;border-color:#f6b6cc;font-weight:800}
 .reac-modal{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-top:1px solid rgba(0,0,0,.08)}
+.chip.cobra{background:#fff1d6;color:#8a4b00;border-color:#f3c77a;font-weight:800}
+.cobra-btn.on{border-color:#d98a00;background:#fff1d6;box-shadow:0 0 0 2px #d98a0033}
 </style>
 
 <header class="brandbar"><div class="wrap">
@@ -484,14 +486,20 @@ function diaOrd(d){if(d===''||d==null)return 99;return d==0?7:+d}
 function hojeDow(){return new Date(S.keys.date+'T00:00:00Z').getUTCDay()}
 function dataDoDia(d){if(d===''||d==null)return null;return addDays(S.keys.week,diaOrd(d)-1)}
 function areaEstado(a,r){if(r&&r.done)return 'feito';const o=diaOrd(a.dia),t=diaOrd(hojeDow());if(o===99)return 'pendente';return o<t?'atrasado':o===t?'hoje':'pendente'}
-const REACOES=['❤️','👏','⭐','👍','🔥'];
+const REACOES=['❤️','👏','⭐','👍','🔥'];const COBRAS=[['⏰','Está atrasado'],['👀','Estou de olho'],['😕','Esperava que já estivesse feito'],['⚠️','Atenção, precisa fazer hoje']];
+function cobrancaChip(r){if(!r||r.done||!r.cobranca)return '';const c=COBRAS.find(x=>x[0]===r.cobranca);return `<span class="chip cobra" title="Recado da gestora">${r.cobranca} Gestora: ${h(c?c[1]:'atenção')}</span>`}
+function cobrancaBtns(store,aid,r){if(!S.gestora||(r&&r.done))return '';return `<span class="reac-bar" role="group" aria-label="Cobrar limpeza atrasada">${COBRAS.map(([e,t])=>`<button class="reac-btn cobra-btn ${(r||{}).cobranca===e?'on':''}" data-act="cobrar" data-s="${store}" data-id="${aid}" data-v="${e}" aria-pressed="${(r||{}).cobranca===e}" title="${(r||{}).cobranca===e?'Tirar recado':t}">${e}</button>`).join('')}</span>`}
+function cobrar(store,aid,emo){const w=S.week[store]=Object.assign({},S.week[store]||{});w.areas=Object.assign({},w.areas||{});const r=w.areas[aid]||{};if(r.done){toast('Essa limpeza já foi feita.');return}
+  const v=r.cobranca===emo?'':emo;const at=new Date().toISOString();w.areas[aid]=Object.assign({},r,{cobranca:v,cobrancaAt:at});render();
+  toast(v?'Recado enviado: '+v+' — o responsável vai ver.':'Recado retirado.');
+  write('weeks/'+store+'_'+S.keys.week,S.weekExists[store],{store,week:S.keys.week},{areas:{[aid]:{cobranca:v,cobrancaAt:at}}})}
 function reacaoChip(r){return r&&r.done&&r.reacao?`<span class="chip reac" title="A gestora viu esta limpeza">${r.reacao} Gestora viu</span>`:''}
 function reacaoBtns(store,aid,r){if(!S.gestora||!r||!r.done)return '';return `<span class="reac-bar" role="group" aria-label="Reagir à limpeza">${REACOES.map(e=>`<button class="reac-btn ${r.reacao===e?'on':''}" data-act="reagir" data-s="${store}" data-id="${aid}" data-v="${e}" aria-pressed="${r.reacao===e}" title="${r.reacao===e?'Tirar reação':'Reagir com '+e}">${e}</button>`).join('')}</span>`}
 function reagir(store,aid,emo){const w=S.week[store]=Object.assign({},S.week[store]||{});w.areas=Object.assign({},w.areas||{});const r=w.areas[aid]||{};if(!r.done){toast('Só dá para reagir a limpezas já feitas.');return}
   const v=r.reacao===emo?'':emo;w.areas[aid]=Object.assign({},r,{reacao:v,reacaoAt:new Date().toISOString()});render();if(S.fotoView&&S.fotoView.aid===aid)fotoModal();
   toast(v?'Reação enviada: '+v+' — quem limpou vai ver.':'Reação retirada.');
   write('weeks/'+store+'_'+S.keys.week,S.weekExists[store],{store,week:S.keys.week},{areas:{[aid]:{reacao:v,reacaoAt:w.areas[aid].reacaoAt}}})}
-function estadoChip(a,r,store){return estadoChip0(a,r)+(store&&r&&r.done&&r.foto?fotoBtn(store,S.keys.week,a.id):'')+reacaoChip(r)+(store?reacaoBtns(store,a.id,r):'')}
+function estadoChip(a,r,store){const atr=areaEstado(a,r||{})==='atrasado';return estadoChip0(a,r)+(store&&r&&r.done&&r.foto?fotoBtn(store,S.keys.week,a.id):'')+reacaoChip(r)+(store?reacaoBtns(store,a.id,r):'')+cobrancaChip(r)+(store&&atr?cobrancaBtns(store,a.id,r||{}):'')}
 function fotoBtn(store,week,aid){const nf=week===S.keys.week?((((S.week[store]||{}).areas||{})[aid]||{}).nf||1):1;return `<button class="btn small fbtn" data-act="verfoto" data-s="${store}" data-w="${week}" data-a="${aid}" aria-label="Ver ${nf>1?nf+' fotos':'foto'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>${nf>1?nf+' fotos':'Foto'}</button>`}
 function estadoChip0(a,r){const e=areaEstado(a,r);return e==='feito'?`<span class="chip ok" title="${h(fmtWhen(r.at))}">Limpo · ${h(r.by)} ${fmtTime(r.at)}</span>`:e==='atrasado'?'<span class="chip bad">Atrasado</span>':e==='hoje'?'<span class="chip me">Hoje</span>':'<span class="chip">Pendente</span>'}
 function sortAreas(list){return list.slice().sort((a,b)=>diaOrd(a.dia)-diaOrd(b.dia))}
@@ -637,7 +645,7 @@ function markItem(store,turno,item,tem,precisa){
 }
 function markArea(store,area,done,resp,foto){
   const k=S.keys;
-  const rec={done,by:S.me,at:new Date().toISOString(),name:area.name,resp,foto:!!(done&&foto),reacao:''};
+  const rec={done,by:S.me,at:new Date().toISOString(),name:area.name,resp,foto:!!(done&&foto),reacao:'',cobranca:''};
   const path='weeks/'+store+'_'+k.week;
   const w=S.week[store]=Object.assign({},S.week[store]||{});w.areas=Object.assign({},w.areas||{});w.areas[area.id]=rec;render();
   write(path,S.weekExists[store],{store,week:k.week},{areas:{[area.id]:rec}});
@@ -867,7 +875,7 @@ function viewChecklist(mode){
   if(!areas.length&&!mine.length)return out+'</div>';
   out+=`<section class="panel"><div class="panel-h"><h2>Minha limpeza da semana</h2><span class="chip num">${fmtDM(S.keys.week)} a ${fmtDM(addDays(S.keys.week,6))}</span></div><div class="panel-b">`;
   if(!mine.length)out+=`<p class="muted" style="margin:0 0 12px">Nenhuma limpeza pesada ficou com você nesta semana.</p>`;
-  else out+=`<div class="clean" style="margin-bottom:14px">${mine.map(a=>{const r=wk[a.id]||{};const e=areaEstado(a,r);const dd=dataDoDia(a.dia);return `<div class="ccard mine ${e}"><div class="cday"><b>${diaNome(a.dia)}${dd?' '+fmtDM(dd):''}</b>${e==='atrasado'?'<span class="chip bad">Atrasado</span>':e==='hoje'?'<span class="chip me">Hoje</span>':''}</div><div class="t">${h(a.name)}</div>
+  else out+=`<div class="clean" style="margin-bottom:14px">${mine.map(a=>{const r=wk[a.id]||{};const e=areaEstado(a,r);const dd=dataDoDia(a.dia);return `<div class="ccard mine ${e}"><div class="cday"><b>${diaNome(a.dia)}${dd?' '+fmtDM(dd):''}</b>${e==='atrasado'?'<span class="chip bad">Atrasado</span>':e==='hoje'?'<span class="chip me">Hoje</span>':''}</div><div class="t">${h(a.name)}</div>${cobrancaChip(r)}
     ${a.proc?`<div class="small"><span class="muted">Como:</span> ${h(a.proc)}</div>`:''}${a.prod?`<div class="small"><span class="muted">Produto:</span> ${h(a.prod)}</div>`:''}
     ${r.done?`<span class="chip ok">Limpo por ${h(r.by)} · ${fmtWhen(r.at)}</span><div style="display:flex;gap:6px;flex-wrap:wrap">${r.foto?fotoBtn(S.store,S.keys.week,a.id):''}${S.upl===a.id?'<button class="btn small" disabled>Enviando foto…</button>':r.foto?((r.nf||1)<MAXFOTOS?`<button class="btn small" data-act="fotomais" data-id="${a.id}">${CAM}+ Mais uma foto</button>`:''):`<button class="btn ghost small" data-act="fotoarea" data-id="${a.id}">Enviar foto</button>`}<button class="btn ghost small" data-act="area" data-id="${a.id}" data-v="0">Desfazer</button>${reacaoChip(r)}${reacaoBtns(S.store,a.id,r)}</div>`
       :(S.upl===a.id?`<button class="btn primary" disabled>Enviando foto…</button>`:fotoObrig(S.store)?`<button class="btn primary cam" data-act="fotoarea" data-id="${a.id}">${CAM}Tirar foto e marcar como limpo</button>`:`<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn primary cam" data-act="fotoarea" data-id="${a.id}">${CAM}Foto e limpo</button><button class="btn" data-act="area" data-id="${a.id}" data-v="1">Limpo sem foto</button></div>`)}</div>`}).join('')}</div>`;
@@ -1701,6 +1709,7 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='modal'){e.targ
     const st=S.store;clearTimeout(commitT[key]);commitT[key]=setTimeout(()=>commitProd(st,id),900);return}
   if(a==='rsep'){if(S.readOnly){toast('Seu acesso é só de visualização.');return}const it=(c.items||[]).find(x=>x.id===id);if(!it)return;const r=itemRec(repoDay(S.store).items,id);markSep(S.store,it,!r.sep);if(!r.sep)toast(it.name+' separado.');return}
   if(a==='reposo'){S.repoSoSep=!S.repoSoSep;render();return}
+  if(a==='cobrar'){cobrar(b.dataset.s,id,v);return}
   if(a==='reagir'){reagir(b.dataset.s,id,v);return}
   if(a==='obsadd'){obsAdd(b.dataset.s);return}
   if(a==='obsok'){obsOk(b.dataset.s,id);return}
