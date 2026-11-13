@@ -1201,6 +1201,8 @@ async function setDomFixo(st,id,v){const c=(S.cfgRaw||{})[st]||S.cfg[st];if(!c)r
 
 // ---------- relatórios ----------
 function relRange(){const R=S.rel;const t=S.keys.date;
+  if(R.per==='sem')return [S.keys.week,t];
+  if(R.per==='semant')return [addDays(S.keys.week,-7),addDays(S.keys.week,-1)];
   if(R.per==='7')return [addDays(t,-6),t];
   if(R.per==='30')return [addDays(t,-29),t];
   if(R.per==='mes')return [t.slice(0,8)+'01',t];
@@ -1223,7 +1225,7 @@ async function loadRel(){
 function calcRel(s,a,b,days,weeks){
   const c=S.cfg[s]||{};const today=S.keys.date;const end=b<today?b:today;
   const dates=[];for(let d=a;d<=end;d=addDays(d,1)){const dow=new Date(d+'T00:00:00Z').getUTCDay();if(dow===1&&!days[d])continue;dates.push(d)}
-  const R={store:s,dates,daily:[],missed:{},func:{},prodDaily:[],prodMiss:{},repo:{},people:{},clean:{},cleanTot:{due:0,done:0,prazo:0,foto:0}};
+  const R={store:s,dates,daily:[],missed:{},func:{},prodDaily:[],prodMiss:{},repo:{},people:{},clean:{},cleanTot:{due:0,done:0,prazo:0,foto:0},cleanList:[]};
   const P=n=>R.people[n]=R.people[n]||{tarefas:0,producao:0,reposicao:0,limpezas:0};
   const tasks=c.tasks||[];
   dates.forEach(d=>{const doc=days[d]||{};const t=doc.tasks||{};let exp=0,done=0;
@@ -1242,15 +1244,21 @@ function calcRel(s,a,b,days,weeks){
     const wd=(weeks[w]||{}).areas||{};const rot=rotation(s,weekIdx(w));
     (c.areas||[]).forEach(ar=>{const due=ar.dia===''||ar.dia==null?addDays(w,6):addDays(w,diaOrd(ar.dia)-1);if(due<a||due>end)return;
       const r=wd[ar.id]||{};const resp=r.resp||rot[ar.id]||'—';const C=R.clean[resp]=R.clean[resp]||{due:0,done:0,prazo:0,foto:0};C.due++;R.cleanTot.due++;
+      R.cleanList.push({w,aid:ar.id,name:ar.name,due,resp,done:!!r.done,by:r.by||'',at:r.at||'',foto:!!(r.done&&r.foto),reacao:r.reacao||'',refazer:(!r.done&&r.refazer)||''});
       if(r.done){C.done++;R.cleanTot.done++;if(bizDate(Date.parse(r.at))<=due){C.prazo++;R.cleanTot.prazo++}if(r.foto){C.foto++;R.cleanTot.foto++}if(r.by)P(r.by).limpezas++}});
   }
   return R;
 }
+function limpezasTabela(s,L,titulo){if(!L.length)return `<div><div class="label" style="margin-bottom:8px">${titulo}</div><span class="small muted">Nenhuma limpeza no período.</span></div>`;
+  const hoje=S.keys.date;L=L.slice().sort((p,q)=>p.due<q.due?-1:p.due>q.due?1:0);
+  return `<div><div class="label" style="margin-bottom:8px">${titulo}</div><div class="tablewrap"><table class="rel"><thead><tr><th>Dia</th><th>Área</th><th>Responsável</th><th>Situação</th><th>Foto</th></tr></thead><tbody>${L.map(c=>{const dow=new Date(c.due+'T00:00:00Z').getUTCDay();
+    const sit=c.done?`<span class="chip ok">Limpo ${fmtWhen(c.at).slice(0,5)}${c.by&&c.by!==c.resp?' por '+h(c.by):''}</span>${bizDate(Date.parse(c.at))>c.due?' <span class="chip">com atraso</span>':''}${c.reacao?' <span class="chip reac">'+c.reacao+'</span>':''}`:c.due>=hoje?'<span class="chip">Ainda no prazo</span>':`<span class="chip bad">Não feita</span>${c.refazer?' <span class="chip cobra">🔁 '+h(c.refazer)+'</span>':''}`;
+    return `<tr><td class="when">${diaNome(dow).slice(0,3)} ${fmtDM(c.due)}</td><td><b>${h(c.name)}</b></td><td>${h(c.resp)}</td><td>${sit}</td><td>${c.foto?fotoBtn(s,c.w,c.aid):'<span class="muted small">—</span>'}</td></tr>`}).join('')}</tbody></table></div></div>`}
 function viewRel(){
   const R=S.rel;const [a,b]=relRange();
   let out=`<div class="stack"><section class="panel"><div class="panel-b stack" style="gap:12px">
     <div class="field"><span class="label">Loja</span>${pick('relstore',R.store,[['todas','Todas'],...STORES.map(x=>[x.id,x.short])])}</div>
-    <div class="field"><span class="label">Período</span>${pick('relper',R.per,[['7','Últimos 7 dias'],['30','Últimos 30 dias'],['mes','Este mês'],['mesant','Mês passado'],['custom','Escolher datas']])}</div>
+    <div class="field"><span class="label">Escolha o período do relatório</span>${pick('relper',R.per,[['sem','Esta semana'],['semant','Semana passada'],['7','Últimos 7 dias'],['30','Últimos 30 dias'],['mes','Este mês'],['mesant','Mês passado'],['custom','📅 Escolher datas (de / até)']])}</div>
     ${R.per==='custom'?`<div class="setup"><div class="field"><label class="label" for="rel-a">De</label><input type="date" id="rel-a" data-act="rela" value="${a}" max="${S.keys.date}"></div><div class="field"><label class="label" for="rel-b">Até</label><input type="date" id="rel-b" data-act="relb" value="${b}" max="${S.keys.date}"></div></div>`:''}
     <p class="small muted" style="margin:0">${fmtDate(a)} a ${fmtDate(b)}. Segundas sem registro não entram, porque a loja fica fechada.</p>
   </div></section>`;
@@ -1276,6 +1284,7 @@ function viewRel(){
     out+=`<div><div class="label" style="margin-bottom:8px">Reposição: itens mais pedidos</div>${rp.length?`<div class="tablewrap"><table class="rel"><thead><tr><th>Item</th><th>Dias pedido</th><th>Total pedido</th></tr></thead><tbody>${rp.map(([n,v])=>`<tr><td>${h(n)}</td><td class="num">${v.vezes}</td><td class="num">${v.soma?String(Math.round(v.soma*100)/100).replace('.',',')+(v.und?' '+h(v.und):''):'—'}</td></tr>`).join('')}</tbody></table></div>`:'<span class="small muted">Nenhum pedido no período.</span>'}</div>`;
     const cl=Object.entries(x.clean).sort((p,q)=>p[0].localeCompare(q[0]));
     out+=`<div><div class="label" style="margin-bottom:8px">Limpeza semanal por funcionário</div>${cl.length?`<div class="tablewrap"><table class="rel"><thead><tr><th>Responsável</th><th>Limpezas</th><th>Feitas</th><th>No prazo</th><th>Com foto</th><th>Não feitas</th></tr></thead><tbody>${cl.map(([n,v])=>`<tr><td><b>${h(n)}</b></td><td class="num">${v.due}</td><td class="num">${v.done}</td><td class="num">${v.prazo}</td><td class="num">${v.foto}</td><td class="num">${v.due-v.done?`<span class="chip bad">${v.due-v.done}</span>`:'0'}</td></tr>`).join('')}</tbody></table></div>`:'<span class="small muted">Nenhuma limpeza vencida no período.</span>'}</div>`;
+    out+=limpezasTabela(s,x.cleanList,'Limpezas do período (toque em Foto para ver)');
     const pp=Object.entries(x.people).sort((p,q)=>(q[1].tarefas+q[1].producao+q[1].reposicao+q[1].limpezas)-(p[1].tarefas+p[1].producao+p[1].reposicao+p[1].limpezas));
     out+=`<div><div class="label" style="margin-bottom:8px">O que cada funcionário marcou</div>${pp.length?`<div class="tablewrap"><table class="rel"><thead><tr><th>Funcionário</th><th>Tarefas</th><th>Produção</th><th>Reposição</th><th>Limpezas</th></tr></thead><tbody>${pp.map(([n,v])=>`<tr><td><b>${h(n)}</b></td><td class="num">${v.tarefas}</td><td class="num">${v.producao}</td><td class="num">${v.reposicao}</td><td class="num">${v.limpezas}</td></tr>`).join('')}</tbody></table></div>`:'<span class="small muted">Nenhuma marcação no período.</span>'}</div>`;
     out+=`</div></section>`;
@@ -1512,6 +1521,13 @@ function viewRodizio(){
   <section class="panel"><div class="panel-b"><div class="field"><span class="label">${CAM}Foto nas limpezas semanais (${h(STORES.find(x=>x.id===s).short)})</span>${pick('fotoreq',fotoObrig(s)?'1':'0',[['1','Obrigatória'],['0','Opcional']])}</div>
   <p class="small muted" style="margin:8px 0 0">O funcionário tira a foto pelo celular em Checklist → Minha limpeza da semana, no botão “Tirar foto e marcar como limpo”. Você vê a foto no botão “Foto” desta tabela, no Painel e no Histórico.</p></div></section>`;
   if(!c)return out+'<div class="empty">Loja sem configuração.</div></div>';
+  {const P=S.rotPast=S.rotPast||{off:-1};const mon=addDays(S.keys.week,7*P.off);const key=s+'|'+mon;
+    if(P.key!==key){P.key=key;P.data=null;S.db.doc('weeks/'+s+'_'+mon).get().then(sn=>{if(P.key!==key)return;P.data=sn.exists?(sn.data().areas||{}):{};render()}).catch(()=>{P.data={};render()})}
+    const wkx=weekIdx(mon);const rot=rotation(s,wkx);const L=P.data?sortAreas(c.areas||[]).map(ar=>{const r=P.data[ar.id]||{};const due=ar.dia===''||ar.dia==null?addDays(mon,6):addDays(mon,diaOrd(ar.dia)-1);return {w:mon,aid:ar.id,name:ar.name,due,resp:r.resp||rot[ar.id]||'—',done:!!r.done,by:r.by||'',at:r.at||'',foto:!!(r.done&&r.foto),reacao:r.reacao||'',refazer:(!r.done&&r.refazer)||''}}):[];
+    const feitas=L.filter(x=>x.done).length;
+    out+=`<section class="panel"><div class="panel-h"><h2>Semanas anteriores</h2>${P.data?`<span class="chip num">${feitas} de ${L.length} feitas</span>`:''}</div><div class="panel-b stack" style="gap:10px">
+      <div class="seg"><button data-act="rpast" data-v="-1" aria-label="Semana anterior">‹</button><button aria-pressed="true" disabled style="flex:3">Semana de ${fmtDM(mon)} a ${fmtDM(addDays(mon,6))}</button><button data-act="rpast" data-v="1" aria-label="Semana seguinte" ${P.off>=-1?'disabled':''}>›</button></div>
+      ${P.data?limpezasTabela(s,L,'O que foi feito nessa semana'):'<div class="empty">Buscando a semana…</div>'}</div></section>`}
   const per=S.rotGen||'n4';const offs=rotOffsets(per);
   out+=`<section class="panel"><div class="panel-h"><h2>Gerar rodízio</h2></div><div class="panel-b stack" style="gap:10px"><div class="field"><span class="label">Período</span>${pick('rper',S.rotPer||per,rotPeriodos())}</div>
   <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-act="rgerar">Gerar rodízio</button><button class="btn" data-act="rprint">Imprimir este período</button></div>
@@ -1847,6 +1863,7 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='modal'){e.targ
   if(a==='mmonth'){const [y,m]=S.mon.month.split('-').map(Number);const d=new Date(Date.UTC(y,m-1+(+v),1));S.mon.month=d.toISOString().slice(0,7);S.mon.data=null;render();return}
   if(a==='hpick'){S.hist.date=v;S.hist.rows=null;render();return}
   if(a==='rstore'){S.rotStore=v;render();return}
+  if(a==='rpast'){S.rotPast=S.rotPast||{off:-1};S.rotPast.off=Math.min(-1,S.rotPast.off+(+v));render();return}
   if(a==='rper'){S.rotPer=v;render();return}
   if(a==='rgerar'){S.rotGen=S.rotPer||S.rotGen||'n4';render();toast('Rodízio gerado: '+rotPerLabel(S.rotGen));return}
   if(a==='rprint'){const per=S.rotGen||'n4';S.pr.kind='limpeza';S.pr.store=S.rotStore;S.pr.week='r:'+rotOffsets(per).join(',');S.pr.wlabel=rotPerLabel(per);S.tab='imprimir';render();return}
