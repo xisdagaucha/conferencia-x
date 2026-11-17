@@ -566,13 +566,14 @@ function proximaFolga(store,emp){const t=S.keys.date;let best='';const n=niverNo
   if(!isGestorF(emp))for(const d of folgasDom(store,emp).keys()){if(d>=t&&d<=addDays(t,40)&&(!best||d<best))best=d}return best}
 const ROTMEMO={};let ROTSTAMP='';
 function rotStamp(){return JSON.stringify([prevStamp(),folStamp().length,Object.keys(S.cfg).map(k=>S.cfg[k]&&((S.cfg[k].areas||[]).length+'/'+(S.cfg[k].employees||[]).length)),Object.keys(S.folgas||{}).length,JSON.stringify(S.folgas||{}).length,JSON.stringify((S.cfg[S.store]||{}).areas||[]).length])}
-// limpeza que ficou sem fazer na semana passada volta para a mesma pessoa nesta semana
+// limpeza que a gestora mandou refazer e não foi refeita na semana passada volta para a mesma pessoa nesta semana
 const CARRY={};
 function prevStamp(){return Object.keys(S.weekPrev||{}).map(s=>s+':'+Object.entries(((S.weekPrev[s]||{}).areas)||{}).filter(([k,r])=>r&&r.done).map(([k])=>k).sort().join(',')).join('/')}
 const CARRY_DESDE=weekIdx('2026-11-09');// começa na semana de 09/11 (a semana em andamento não muda)
 function carryOver(store,wk,out){const c=S.cfg[store];if(!c||!S.keys||wk<CARRY_DESDE||wk!==S.keys.wk||!(store in (S.weekPrev||{})))return out;
   const prev=rotation(store,wk-1);const pa=((S.weekPrev[store]||{}).areas)||{};const mon=addDays('2024-01-01',7*wk);
-  (c.areas||[]).forEach(a=>{const quem=prev[a.id];const r=pa[a.id]||{};if(!quem||quem==='—'||r.done)return;
+  (c.areas||[]).forEach(a=>{const r=pa[a.id]||{};if(r.done||!r.refazer)return;// só volta para a mesma pessoa quando a gestora pediu para refazer e não foi refeito
+    const quem=r.refazerDe||r.resp||prev[a.id];if(!quem||quem==='—')return;
     const e=(c.employees||[]).find(x=>x.name===quem);if(!e)return;const d=a.dia===''||a.dia==null?null:addDays(mon,diaOrd(a.dia)-1);if(d&&isFolga(store,e,d))return;
     CARRY[store+'|'+wk+'|'+a.id]=quem;out[a.id]=quem});
   return out}
