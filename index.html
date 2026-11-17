@@ -568,7 +568,7 @@ const ROTMEMO={};let ROTSTAMP='';
 function rotStamp(){return JSON.stringify([prevStamp(),folStamp().length,Object.keys(S.cfg).map(k=>S.cfg[k]&&((S.cfg[k].areas||[]).length+'/'+(S.cfg[k].employees||[]).length)),Object.keys(S.folgas||{}).length,JSON.stringify(S.folgas||{}).length,JSON.stringify((S.cfg[S.store]||{}).areas||[]).length])}
 // limpeza que a gestora mandou refazer e não foi refeita na semana passada volta para a mesma pessoa nesta semana
 const CARRY={};
-function prevStamp(){return Object.keys(S.weekPrev||{}).map(s=>s+':'+Object.entries(((S.weekPrev[s]||{}).areas)||{}).filter(([k,r])=>r&&r.done).map(([k])=>k).sort().join(',')).join('/')}
+function prevStamp(){return Object.keys(S.weekPrev||{}).map(s=>s+':'+Object.entries(((S.weekPrev[s]||{}).areas)||{}).filter(([k,r])=>r&&(r.done||r.refazer)).map(([k,r])=>k+(r.done?'':'*')).sort().join(',')).join('/')}
 const CARRY_DESDE=weekIdx('2026-11-09');// começa na semana de 09/11 (a semana em andamento não muda)
 function carryOver(store,wk,out){const c=S.cfg[store];if(!c||!S.keys||wk<CARRY_DESDE||wk!==S.keys.wk||!(store in (S.weekPrev||{})))return out;
   const prev=rotation(store,wk-1);const pa=((S.weekPrev[store]||{}).areas)||{};const mon=addDays('2024-01-01',7*wk);
@@ -1254,7 +1254,13 @@ function limpezasTabela(s,L,titulo){if(!L.length)return `<div><div class="label"
   const hoje=S.keys.date;L=L.slice().sort((p,q)=>p.due<q.due?-1:p.due>q.due?1:0);
   return `<div><div class="label" style="margin-bottom:8px">${titulo}</div><div class="tablewrap"><table class="rel"><thead><tr><th>Dia</th><th>Área</th><th>Responsável</th><th>Situação</th><th>Foto</th></tr></thead><tbody>${L.map(c=>{const dow=new Date(c.due+'T00:00:00Z').getUTCDay();
     const sit=c.done?`<span class="chip ok">Limpo ${fmtWhen(c.at).slice(0,5)}${c.by&&c.by!==c.resp?' por '+h(c.by):''}</span>${bizDate(Date.parse(c.at))>c.due?' <span class="chip">com atraso</span>':''}${c.reacao?' <span class="chip reac">'+c.reacao+'</span>':''}`:c.due>=hoje?'<span class="chip">Ainda no prazo</span>':`<span class="chip bad">Não feita</span>${c.refazer?' <span class="chip cobra">🔁 '+h(c.refazer)+'</span>':''}`;
-    return `<tr><td class="when">${diaNome(dow).slice(0,3)} ${fmtDM(c.due)}</td><td><b>${h(c.name)}</b></td><td>${h(c.resp)}</td><td>${sit}</td><td>${c.foto?fotoBtn(s,c.w,c.aid):'<span class="muted small">—</span>'}</td></tr>`}).join('')}</tbody></table></div></div>`}
+    return `<tr><td class="when">${diaNome(dow).slice(0,3)} ${fmtDM(c.due)}</td><td><b>${h(c.name)}</b></td><td>${h(c.resp)}</td><td>${sit}</td><td>${c.foto?fotoBtn(s,c.w,c.aid):'<span class="muted small">—</span>'}${S.gestora&&!c.done&&c.due<hoje&&c.w===addDays(S.keys.week,-7)&&c.resp&&c.resp!=='—'?` <button class="btn small ${c.refazer?'primary':''}" data-act="refsem" data-s="${s}" data-id="${c.aid}" data-v="${h(c.resp)}" title="${c.refazer?'Desfazer':'A área fica com '+h(c.resp)+' nesta semana'}">${c.refazer?'✓ Fica com '+h(c.resp)+' (desfazer)':'🔁 Refazer com '+h(c.resp)}</button>`:''}</td></tr>`}).join('')}</tbody></table></div></div>`}
+async function refazerSemanaPassada(st,aid,quem){const mon=addDays(S.keys.week,-7);const pa=((S.weekPrev[st]||{}).areas)||{};const r=pa[aid]||{};if(r.done){toast('Essa limpeza foi feita.');return}
+  const tirar=!!r.refazer;const at=new Date().toISOString();const rec=Object.assign({},r,{done:false,refazer:tirar?'':'Não fez na semana dela',refazerDe:tirar?'':quem,refazerAt:at});
+  const wp=S.weekPrev[st]=Object.assign({},S.weekPrev[st]||{});wp.areas=Object.assign({},wp.areas||{});wp.areas[aid]=rec;
+  if(S.rotPast&&S.rotPast.data&&S.rotPast.key===st+'|'+mon){S.rotPast.data=Object.assign({},S.rotPast.data,{[aid]:rec})}
+  render();toast(tirar?'Pronto, a área voltou para o rodízio normal.':'Pronto: '+quem+' fica com essa limpeza nesta semana para fazer.');
+  try{const ref=S.db.doc('weeks/'+st+'_'+mon);try{await ref.update({areas:{[aid]:rec}})}catch(e){if(e&&e.code==='invalid_argument')await ref.set({store:st,week:mon,areas:{[aid]:rec}});else throw e}}catch(e){toast('Não foi possível salvar. Tente de novo.')}}
 function viewRel(){
   const R=S.rel;const [a,b]=relRange();
   let out=`<div class="stack"><section class="panel"><div class="panel-b stack" style="gap:12px">
@@ -1864,6 +1870,7 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='modal'){e.targ
   if(a==='mmonth'){const [y,m]=S.mon.month.split('-').map(Number);const d=new Date(Date.UTC(y,m-1+(+v),1));S.mon.month=d.toISOString().slice(0,7);S.mon.data=null;render();return}
   if(a==='hpick'){S.hist.date=v;S.hist.rows=null;render();return}
   if(a==='rstore'){S.rotStore=v;render();return}
+  if(a==='refsem'){refazerSemanaPassada(b.dataset.s,id,v);return}
   if(a==='rpast'){S.rotPast=S.rotPast||{off:-1};S.rotPast.off=Math.min(-1,S.rotPast.off+(+v));render();return}
   if(a==='rper'){S.rotPer=v;render();return}
   if(a==='rgerar'){S.rotGen=S.rotPer||S.rotGen||'n4';render();toast('Rodízio gerado: '+rotPerLabel(S.rotGen));return}
