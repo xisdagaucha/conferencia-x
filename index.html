@@ -399,6 +399,30 @@ table.folg tfoot td{border-top:2px solid var(--line)}
 .f5x2 td.antes{background:rgba(0,0,0,.03)}
 .favisos{display:flex;flex-direction:column;gap:3px;margin-top:4px}
 .favisos .chip{font-size:11px;white-space:nowrap}
+.fol-emps{display:flex;flex-wrap:wrap;gap:8px}
+.fol-emp{display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font:inherit;cursor:pointer;min-height:44px}
+.fol-emp small{color:var(--muted);font-size:11px}
+.fol-emp.on{border:2px solid #28c850;background:#eafbe9}
+.fol-st{font-size:12px;font-weight:800;border-radius:999px;padding:2px 7px}
+.fol-st.ok{background:#dff5df;color:#1d6b2c}.fol-st.bad{background:#fbdedb;color:#a3211b}
+.cal{padding:12px 16px 4px}
+.cal-h,.cal-w{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.cal-h div{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:center;padding:4px 0}
+.cal-w{margin-bottom:6px}
+.cal-d{min-height:92px;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:6px;text-align:left;display:flex;flex-direction:column;gap:4px;font:inherit;color:inherit;cursor:pointer;min-width:0}
+.cal-d.trav{cursor:default;background:var(--surface2)}
+.cal-d.seg{background:var(--surface2);cursor:default}
+.cal-d.fora{opacity:.4}
+.cal-d.hoje{box-shadow:inset 0 0 0 2px var(--ink)}
+.cal-d.meu{background:#dff5df;border:2px solid #28c850}
+.cal-n{font-weight:800;font-size:15px;display:flex;align-items:center;gap:6px}
+.cal-f{background:#28c850;color:#07110a;border-radius:6px;padding:0 6px;font-size:12px}
+.cal-who{display:flex;flex-wrap:wrap;gap:3px}
+.cal-who span{font-size:11px;background:var(--surface2);border-radius:6px;padding:1px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.cal-who span.eu{background:#28c850;color:#07110a;font-weight:800}
+.cal-closed{font-size:11px;color:var(--muted);line-height:1.25}
+@media (max-width:600px){.cal-closed{display:none}.cal-d.seg::after{content:'Fechado';font-size:9px;color:var(--muted)}.cal{padding:8px}.cal-h,.cal-w{gap:3px}.cal-d{min-height:70px;padding:4px}.cal-who span{font-size:10px;padding:0 3px}.cal-n{font-size:13px}}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .cal-d.meu,:root:not([data-theme="light"]) .fol-emp.on{background:#12321b}}
 </style>
 
 <header class="brandbar"><div class="wrap">
@@ -1172,28 +1196,36 @@ function viewPainel(){
 
 // ---------- tela de folgas ----------
 function folEmps(storeSel){const L=[];STORES.forEach(st=>{if(storeSel!=='todas'&&st.id!==storeSel)return;((S.cfg[st.id]||{}).employees||[]).filter(e=>!isGestorF(e)).forEach(e=>L.push({st:st.id,e}))});return L.sort((a,b)=>a.e.name.localeCompare(b.e.name,'pt-BR'))}
+function folAvisos(st,e,ym){const semanas=semanasMes(ym).filter(w=>addDays(w,6)>=FOLGA_5X2);const sem0=[],semX=[];
+  semanas.forEach(w=>{const n=[1,2,3,4,5,6].map(i=>addDays(w,i)).filter(d=>isFolga(st,e,d)).length;if(n===0)sem0.push(fmtDM(addDays(w,1)));if(n>1)semX.push(fmtDM(addDays(w,1)))});return {sem0,semX,tot:semanas.length}}
 function viewFolgas5x2(){
   const F=S.fol;const ym=F.month;const [y,m]=ym.split('-').map(Number);const rows=folEmps(F.store);
-  const nd=new Date(Date.UTC(y,m,0)).getUTCDate();const days=Array.from({length:nd},(_,i)=>ym+'-'+String(i+1).padStart(2,'0'));
-  const LET=['D','S','T','Q','Q','S','S'];const dw=d=>new Date(d+'T00:00:00Z').getUTCDay();
-  const semanas=semanasMes(ym);
+  if(!rows.some(({st,e})=>fkey(st,e)===F.emp))F.emp=rows.length?fkey(rows[0].st,rows[0].e):'';
+  const sel=rows.find(({st,e})=>fkey(st,e)===F.emp);const dw=d=>new Date(d+'T00:00:00Z').getUTCDay();const hoje=S.keys.date;
   let out=`<div class="stack"><section class="panel"><div class="panel-b stack" style="gap:12px">
     <div class="field"><span class="label">Mês</span><div class="seg"><button data-act="fmonth" data-v="-1" aria-label="Mês anterior">‹</button><button aria-pressed="true" disabled style="flex:3">${MESES[m-1]} ${y}</button><button data-act="fmonth" data-v="1" aria-label="Próximo mês">›</button></div></div>
     <div class="field"><span class="label">Loja</span>${pick('fstore',F.store,[['todas','Todas'],...STORES.map(x=>[x.id,x.short])])}</div>
-    ${ym===FOLGA_5X2.slice(0,7)?`<div class="notice" style="margin:0">Até <b>${fmtDM(addDays(FOLGA_5X2,-1))}</b> vale a regra antiga (folga de domingo, em cinza claro). A partir de <b>${fmtDM(FOLGA_5X2)}</b> começa a escala 5x2.</div>`:''}<p class="small muted" style="margin:0"><b>Escala 5x2:</b> segunda é folga de todos (loja fechada) e cada funcionário tem <b>mais 1 folga por semana</b>. Toque no dia para marcar ou desmarcar a folga. O app avisa quem ficou sem folga ou com folga a mais em alguma semana. Aniversário (<b>A</b>) já conta como folga.</p>
+    ${ym===FOLGA_5X2.slice(0,7)?`<div class="notice" style="margin:0">Até <b>${fmtDM(addDays(FOLGA_5X2,-1))}</b> vale a folga de domingo. A partir de <b>${fmtDM(FOLGA_5X2)}</b> começa a escala 5x2: segunda + 1 folga por semana.</div>`:''}
+    <div class="field"><span class="label">1. Escolha o funcionário</span><div class="fol-emps">${rows.map(({st,e})=>{const k=fkey(st,e);const a=folAvisos(st,e,ym);const ok=!a.sem0.length&&!a.semX.length;
+      return `<button class="fol-emp ${k===F.emp?'on':''}" data-act="fsel" data-v="${k}" aria-pressed="${k===F.emp}"><b>${h(e.name)}</b>${F.store==='todas'&&STORES.length>1?`<small>${h(STORES.find(x=>x.id===st).short)}</small>`:''}<span class="fol-st ${ok?'ok':'bad'}">${ok?'✓':'⚠ '+(a.sem0.length||'')+(a.semX.length?' +':'')}</span></button>`}).join('')}</div></div>
+    <p class="small muted" style="margin:0"><b>2.</b> Toque nos dias do calendário para marcar ou tirar a folga de <b>${sel?h(sel.e.name):'—'}</b>. Cada dia mostra quem está de folga.</p>
   </div></section>`;
-  out+=`<section class="panel"><div class="panel-h"><h2>Escala de folga · ${MESES[m-1]}</h2></div><div class="tablewrap"><table class="grid folg f5x2"><thead><tr><th class="sticky">Funcionário</th>${days.map(d=>`<th class="${dw(d)===1?'seg-col':''} ${dw(d)===0?'dom-col':''}"><span class="small">${LET[dw(d)]}</span><br>${+d.slice(8)}</th>`).join('')}</tr></thead><tbody>
-  ${rows.map(({st,e})=>{const k=fkey(st,e);const set=diasFolga(st,e);
-    const sem0=[],semX=[];semanas.filter(w=>addDays(w,6)>=FOLGA_5X2).forEach(w=>{const ds=[1,2,3,4,5,6].map(i=>addDays(w,i));const n=ds.filter(d=>isFolga(st,e,d)).length;if(n===0)sem0.push(fmtDM(addDays(w,1)));if(n>1)semX.push(fmtDM(addDays(w,1)))});
-    const avisos=[sem0.length?`<span class="chip bad" title="Semanas começando em ${sem0.join(', ')}">⚠ ${sem0.length===semanas.filter(w=>addDays(w,6)>=FOLGA_5X2).length?'nenhuma folga marcada':'sem folga: '+sem0.join(', ')}</span>`:'',semX.length?`<span class="chip me" title="Mais de 1 folga nas semanas de ${semX.join(', ')}">2+ folgas: ${semX.join(', ')}</span>`:''].filter(Boolean);
-    if(!avisos.length)avisos.push('<span class="chip ok">✓ 1 folga por semana</span>');
-    return `<tr><td class="sticky"><b>${h(e.name)}</b>${F.store==='todas'&&STORES.length>1?`<div class="small muted">${h(STORES.find(x=>x.id===st).short)}</div>`:''}${avisos.length?`<div class="favisos">${avisos.join('')}</div>`:''}</td>
-    ${days.map(d=>{if(dw(d)===1)return `<td class="seg-col"><span class="fclosed" title="Segunda: loja fechada">–</span></td>`;
-      if(d<FOLGA_5X2){if(dw(d)!==0)return `<td class="antes"><span class="fclosed" title="Até ${fmtDM(addDays(FOLGA_5X2,-1))}: só folga de domingo">·</span></td>`;const f=folgasDom(st,e).get(d)||'';return `<td class="dom-col antes"><button class="fcell ${f?'on':''}" data-act="fset" data-k="${k}" data-v="${d}" aria-pressed="${!!f}" title="Folga de domingo (regra antiga)">${f==='A'?'A':f?'F':''}</button></td>`}
-      const nv=isNiver(e,d);const on=set.has(d);
-      return `<td class="${dw(d)===0?'dom-col':''}"><button class="fcell ${on||nv?'on':''} ${nv&&!on?'niv':''}" data-act="fdia" data-k="${k}" data-v="${d}" aria-pressed="${on}" aria-label="Folga de ${h(e.name)} em ${fmtDM(d)}">${on?'F':nv?'A':''}</button></td>`}).join('')}</tr>`}).join('')}
-  </tbody><tfoot><tr><td class="sticky"><b>De folga</b></td>${days.map(d=>{if(dw(d)===1)return '<td class="seg-col"></td>';const c=rows.filter(({st,e})=>isFolga(st,e,d)).length;return `<td class="num"><b>${c||''}</b></td>`}).join('')}</tr></tfoot></table></div>
-  <p class="small muted" style="padding:10px 16px 14px;margin:0"><b>F</b> = folga · <b>A</b> = aniversário · <b>–</b> = segunda, loja fechada. A linha <b>De folga</b> mostra quantos estão de folga em cada dia.</p></section></div>`;
+  if(!sel)return out+'<div class="empty">Nenhum funcionário nesta loja.</div></div>';
+  const a=folAvisos(sel.st,sel.e,ym);const k=F.emp;
+  out+=`<section class="panel"><div class="panel-h"><h2>Folgas de ${MESES[m-1]}</h2>${!a.sem0.length&&!a.semX.length?`<span class="chip ok">${h(sel.e.name)}: 1 folga por semana ✓</span>`:''}</div>
+  ${a.sem0.length||a.semX.length?`<div class="panel-b" style="padding-bottom:0">${a.sem0.length?`<span class="chip bad">⚠ ${h(sel.e.name)} sem folga na semana de ${a.sem0.join(', ')}</span> `:''}${a.semX.length?`<span class="chip me">${h(sel.e.name)} com 2 folgas na semana de ${a.semX.join(', ')}</span>`:''}</div>`:''}
+  <div class="cal"><div class="cal-h">${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(x=>`<div>${x}</div>`).join('')}</div>
+  ${semanasMes(ym).map(w=>`<div class="cal-w">${[0,1,2,3,4,5,6].map(i=>{const d=addDays(w,i);const fora=d.slice(0,7)!==ym;const n=+d.slice(8);
+    if(i===0)return `<div class="cal-d seg ${fora?'fora':''}"><span class="cal-n">${n}</span><span class="cal-closed">Fechado<br>folga de todos</span></div>`;
+    const quem=rows.filter(({st,e})=>isFolga(st,e,d));const meu=isFolga(sel.st,sel.e,d);const nv=isNiver(sel.e,d);
+    const antes=d<FOLGA_5X2;const pode=!antes||i===6;
+    const act=antes?(i===6?`data-act="fset" data-k="${k}" data-v="${d}"`:''):`data-act="fdia" data-k="${k}" data-v="${d}"`;
+    return `<${pode?'button':'div'} class="cal-d ${fora?'fora':''} ${meu?'meu':''} ${d===hoje?'hoje':''} ${pode?'':'trav'}" ${pode?act:''} ${pode?`aria-pressed="${meu}" aria-label="${n} de ${MESES[+d.slice(5,7)-1]}${meu?': folga de '+h(sel.e.name):''}"`:''}>
+      <span class="cal-n">${n}${meu?` <span class="cal-f">${nv&&!diasFolga(sel.st,sel.e).has(d)?'A':'F'}</span>`:''}</span>
+      <span class="cal-who">${quem.map(({st,e})=>`<span class="${fkey(st,e)===k?'eu':''}">${h(e.name)}${isNiver(e,d)?' 🎂':''}</span>`).join('')}</span>
+      ${antes&&i!==6?'<span class="cal-closed small">só domingo</span>':''}</${pode?'button':'div'}>`}).join('')}</div>`).join('')}
+  </div>
+  <p class="small muted" style="padding:10px 16px 14px;margin:0">Dia em verde = folga de <b>${h(sel.e.name)}</b> · nomes no dia = todos que estão de folga · 🎂 = aniversário (já conta como folga).</p></section></div>`;
   return out}
 async function setDiaFolga(k,d){if(new Date(d+'T00:00:00Z').getUTCDay()===1){toast('Segunda já é folga de todos.');return}
   const ym=d.slice(0,7);const f=S.folgas[ym]=Object.assign({},S.folgas[ym]||{});f.dias=Object.assign({},f.dias||{});const arr=(f.dias[k]||[]).slice();const i=arr.indexOf(d);if(i>=0)arr.splice(i,1);else arr.push(d);arr.sort();f.dias[k]=arr;render();
@@ -1910,6 +1942,7 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='modal'){e.targ
   if(a==='hpick'){S.hist.date=v;S.hist.rows=null;render();return}
   if(a==='rstore'){S.rotStore=v;render();return}
   if(a==='fdia'){setDiaFolga(b.dataset.k,v);return}
+  if(a==='fsel'){S.fol.emp=v;render();return}
   if(a==='refsem'){refazerSemanaPassada(b.dataset.s,id,v);return}
   if(a==='rpast'){S.rotPast=S.rotPast||{off:-1};S.rotPast.off=Math.min(-1,S.rotPast.off+(+v));render();return}
   if(a==='rper'){S.rotPer=v;render();return}
