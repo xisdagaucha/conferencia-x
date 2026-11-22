@@ -423,6 +423,9 @@ table.folg tfoot td{border-top:2px solid var(--line)}
 .cal-closed{font-size:11px;color:var(--muted);line-height:1.25}
 @media (max-width:600px){.cal-closed{display:none}.cal-d.seg::after{content:'Fechado';font-size:9px;color:var(--muted)}.cal{padding:8px}.cal-h,.cal-w{gap:3px}.cal-d{min-height:70px;padding:4px}.cal-who span{font-size:10px;padding:0 3px}.cal-n{font-size:13px}}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .cal-d.meu,:root:not([data-theme="light"]) .fol-emp.on{background:#12321b}}
+@media (min-width:1100px){body[data-tab="folgas"] .wrap,body[data-tab="rodizio"] .wrap,body[data-tab="relatorios"] .wrap,body[data-tab="mensal"] .wrap{max-width:min(1600px,calc(100vw - 48px))}}
+.fol-layout{display:flex;flex-direction:column;gap:16px}
+@media (min-width:1100px){.fol-layout{display:grid;grid-template-columns:340px minmax(0,1fr);align-items:start}.fol-side{position:sticky;top:12px}.fol-side .fol-emps{flex-direction:column;flex-wrap:nowrap;max-height:58vh;overflow:auto}.fol-side .fol-emp{justify-content:space-between}.fol-main .cal-d{min-height:110px}}
 </style>
 
 <header class="brandbar"><div class="wrap">
@@ -864,7 +867,7 @@ function notifPainel(){const ev=notifEventos();const seen=S.notifSeen||'';
   return `<div class="npop" role="dialog" aria-label="Avisos"><div class="npop-h"><b>Avisos</b><button class="btn ghost small" data-act="notif">Fechar</button></div>
   ${'Notification' in window&&Notification.permission!=='granted'?`<button class="btn primary small" data-act="notifperm" style="margin:0 12px 8px">🔔 Avisar também no aparelho</button>`:''}
   <div class="npop-list">${ev.length?ev.map(e=>`<div class="nitem ${e.at>seen?'novo':''}">${e.foto?`<button class="nlink" data-act="verfoto" data-s="${e.store}" data-w="${S.keys.week}" data-a="${e.aid}">`:'<div>'}<span class="nic">${e.ic}</span><span class="ntx">${h(e.txt)}<small>${h((STORES.find(x=>x.id===e.store)||{}).short||'')} · ${fmtWhen(e.at)}</small></span>${e.foto?'</button>':'</div>'}</div>`).join(''):'<div class="small muted" style="padding:12px">Nenhum aviso nesta semana ainda.</div>'}</div></div>`}
-function render(){
+function render(){try{document.body.dataset.tab=S.tab||''}catch(e){}
   const ae=document.activeElement;const keep=ae&&ae.id?{id:ae.id,v:ae.value,s:ae.selectionStart}:null;
   const roleEl=document.getElementById('role');
   try{notifAvisar()}catch(e){}
@@ -1202,7 +1205,7 @@ function viewFolgas5x2(){
   const F=S.fol;const ym=F.month;const [y,m]=ym.split('-').map(Number);const rows=folEmps(F.store);
   if(!rows.some(({st,e})=>fkey(st,e)===F.emp))F.emp=rows.length?fkey(rows[0].st,rows[0].e):'';
   const sel=rows.find(({st,e})=>fkey(st,e)===F.emp);const dw=d=>new Date(d+'T00:00:00Z').getUTCDay();const hoje=S.keys.date;
-  let out=`<div class="stack"><section class="panel"><div class="panel-b stack" style="gap:12px">
+  let out=`<div class="fol-layout"><section class="panel fol-side"><div class="panel-b stack" style="gap:12px">
     <div class="field"><span class="label">Mês</span><div class="seg"><button data-act="fmonth" data-v="-1" aria-label="Mês anterior">‹</button><button aria-pressed="true" disabled style="flex:3">${MESES[m-1]} ${y}</button><button data-act="fmonth" data-v="1" aria-label="Próximo mês">›</button></div></div>
     <div class="field"><span class="label">Loja</span>${pick('fstore',F.store,[['todas','Todas'],...STORES.map(x=>[x.id,x.short])])}</div>
     ${ym===FOLGA_5X2.slice(0,7)?`<div class="notice" style="margin:0">Até <b>${fmtDM(addDays(FOLGA_5X2,-1))}</b> vale a folga de domingo. A partir de <b>${fmtDM(FOLGA_5X2)}</b> começa a escala 5x2: segunda + 1 folga por semana.</div>`:''}
@@ -1212,7 +1215,7 @@ function viewFolgas5x2(){
   </div></section>`;
   if(!sel)return out+'<div class="empty">Nenhum funcionário nesta loja.</div></div>';
   const a=folAvisos(sel.st,sel.e,ym);const k=F.emp;
-  out+=`<section class="panel"><div class="panel-h"><h2>Folgas de ${MESES[m-1]}</h2>${!a.sem0.length&&!a.semX.length?`<span class="chip ok">${h(sel.e.name)}: 1 folga por semana ✓</span>`:''}</div>
+  out+=`<section class="panel fol-main"><div class="panel-h"><h2>Folgas de ${MESES[m-1]} · ${h(sel.e.name)}</h2>${!a.sem0.length&&!a.semX.length?`<span class="chip ok">${h(sel.e.name)}: 1 folga por semana ✓</span>`:''}</div>
   ${a.sem0.length||a.semX.length?`<div class="panel-b" style="padding-bottom:0">${a.sem0.length?`<span class="chip bad">⚠ ${h(sel.e.name)} sem folga na semana de ${a.sem0.join(', ')}</span> `:''}${a.semX.length?`<span class="chip me">${h(sel.e.name)} com 2 folgas na semana de ${a.semX.join(', ')}</span>`:''}</div>`:''}
   <div class="cal"><div class="cal-h">${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(x=>`<div>${x}</div>`).join('')}</div>
   ${semanasMes(ym).map(w=>`<div class="cal-w">${[0,1,2,3,4,5,6].map(i=>{const d=addDays(w,i);const fora=d.slice(0,7)!==ym;const n=+d.slice(8);
