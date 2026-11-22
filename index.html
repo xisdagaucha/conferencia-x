@@ -428,6 +428,7 @@ table.folg tfoot td{border-top:2px solid var(--line)}
 @media (min-width:1100px){.fol-layout{display:grid;grid-template-columns:340px minmax(0,1fr);align-items:start}.fol-side{position:sticky;top:12px}.fol-side .fol-emps{flex-direction:column;flex-wrap:nowrap;max-height:58vh;overflow:auto}.fol-side .fol-emp{justify-content:space-between}.fol-main .cal-d{min-height:110px}}
 .pubbox{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;border:2px dashed #e8892b;background:#fdebd6;border-radius:12px;padding:10px 12px}
 .pubbox.pub{border:2px solid #28c850;background:#eafbe9}
+.cal-d.fechado{background:repeating-linear-gradient(135deg,var(--surface2),var(--surface2) 8px,transparent 8px,transparent 16px);border:2px dashed var(--muted)}
 </style>
 
 <header class="brandbar"><div class="wrap">
@@ -601,11 +602,17 @@ function folgasDom(store,emp){// Map domingo -> 'F' (fixo ou escolhido), 'A' (an
   FOLMEMO[key]=out;return out}
 // A partir de dez/2026: folgas livres, marcadas dia a dia pela gestora (segunda = loja fechada) — segunda (loja fechada) + 1 folga por semana, marcada dia a dia pela gestora
 const FOLGA_5X2='2026-12-01';
+function lojaFechada(store,date){const f=(S.folgas||{})[date.slice(0,7)];const v=f&&f.fechado&&f.fechado[store];return Array.isArray(v)&&v.includes(date)}
+async function setFechado(stores,d){const ym=d.slice(0,7);const f=S.folgas[ym]=Object.assign({},S.folgas[ym]||{});f.fechado=Object.assign({},f.fechado||{});
+  const fechar=!stores.every(st=>lojaFechada(st,d));const patch={};stores.forEach(st=>{const arr=(f.fechado[st]||[]).filter(x=>x!==d);if(fechar)arr.push(d);arr.sort();f.fechado[st]=arr;patch[st]=arr});render();
+  toast(fechar?'Loja fechada em '+fmtDM(d)+': folga de todos.':'Loja aberta de novo em '+fmtDM(d)+'.');
+  try{const ref=S.db.doc('folgas/'+ym);try{await ref.update({fechado:patch})}catch(e){if(e&&e.code==='invalid_argument')await ref.set({mes:ym,fechado:patch});else throw e}}catch(e){toast('Não foi possível salvar.')}}
 function diasFolga(store,emp){const k=fkey(store,emp);const L=new Set();Object.values(S.folgas||{}).forEach(d=>{const v=d&&d.dias&&d.dias[k];if(Array.isArray(v))v.forEach(x=>L.add(x))});return L}
-function isFolga(store,emp,date){if(!emp)return false;if(new Date(date+'T00:00:00Z').getUTCDay()===1)return true;if(isNiver(emp,date))return true;if(isGestorF(emp))return false;
+function isFolga(store,emp,date){if(!emp)return false;if(new Date(date+'T00:00:00Z').getUTCDay()===1)return true;if(lojaFechada(store,date))return true;if(isNiver(emp,date))return true;if(isGestorF(emp))return false;
   if(date>=FOLGA_5X2)return diasFolga(store,emp).has(date);return folgasDom(store,emp).has(date)}
 function proximaFolga(store,emp){const t=S.keys.date;let best='';const n=niverNorm(emp&&emp.niver);if(n){let d=t.slice(0,4)+'-'+n.slice(3)+'-'+n.slice(0,2);if(d<t)d=(+t.slice(0,4)+1)+d.slice(4);if(d<=addDays(t,40))best=d}
-  if(!isGestorF(emp)){for(const d of folgasDom(store,emp).keys()){if(d<FOLGA_5X2&&d>=t&&d<=addDays(t,40)&&(!best||d<best))best=d}for(const d of diasFolga(store,emp)){if(d>=FOLGA_5X2&&d>=t&&d<=addDays(t,40)&&(S.gestora||folgaVisivel(d.slice(0,7)))&&(!best||d<best))best=d}}return best}
+  if(!isGestorF(emp)){for(const d of folgasDom(store,emp).keys()){if(d<FOLGA_5X2&&d>=t&&d<=addDays(t,40)&&(!best||d<best))best=d}{const fz=[];for(let i=0;i<=40;i++){const d=addDays(t,i);if(lojaFechada(store,d))fz.push(d)}for(const d of fz)if((S.gestora||folgaVisivel(d.slice(0,7)))&&(!best||d<best))best=d}
+    for(const d of diasFolga(store,emp)){if(d>=FOLGA_5X2&&d>=t&&d<=addDays(t,40)&&(S.gestora||folgaVisivel(d.slice(0,7)))&&(!best||d<best))best=d}}return best}
 const DIAS_SEM=['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
 function folgaVisivel(ym){return ym<=S.keys.date.slice(0,7)||!!((S.folgas[ym]||{}).publicado)}
 async function setPublicado(ym,v){const f=S.folgas[ym]=Object.assign({},S.folgas[ym]||{},{publicado:v});render();
@@ -1221,6 +1228,8 @@ function viewFolgas5x2(){
     <div class="field"><span class="label">Loja</span>${pick('fstore',F.store,[['todas','Todas'],...STORES.map(x=>[x.id,x.short])])}</div>
     ${ym===FOLGA_5X2.slice(0,7)?`<div class="notice" style="margin:0">As folgas agora são <b>livres</b>: marque qualquer dia. As folgas de domingo que já estavam combinadas para dezembro foram trazidas para o calendário, e você pode mudar.</div>`:''}
     ${ym>S.keys.date.slice(0,7)?(()=>{const pub=!!((S.folgas[ym]||{}).publicado);return `<div class="pubbox ${pub?'pub':''}"><div><b>${pub?'👁 A equipe já vê estas folgas':'🙈 Escondido da equipe'}</b><div class="small">${pub?'Os funcionários veem a próxima folga deles no app.':'Organize com calma: os funcionários só veem quando você liberar.'}</div></div><button class="btn ${pub?'':'primary'}" data-act="fpub" data-v="${pub?'0':'1'}">${pub?'Esconder de novo':'Liberar para a equipe'}</button></div>`})():''}
+    <div class="field"><span class="label">O que marcar</span>${seg('fmodo',F.modo||'func',[['func','Folga do funcionário'],['fecha','🔒 Loja fechada (todos)']])}</div>
+    ${F.modo==='fecha'?`<p class="small muted" style="margin:0">Toque nos dias em que a loja <b>${F.store==='todas'?'(todas as lojas)':h((STORES.find(x=>x.id===F.store)||{}).short||'')}</b> não vai abrir. Todo mundo fica de folga nesse dia e ninguém recebe limpeza. Toque de novo para abrir.</p>`:''}
     <div class="field"><span class="label">1. Escolha o funcionário</span><div class="fol-emps">${rows.map(({st,e})=>{const k=fkey(st,e);const a=folAvisos(st,e,ym);const ok=!a.sem0.length&&!a.semX.length;
       return `<button class="fol-emp ${k===F.emp?'on':''}" data-act="fsel" data-v="${k}" aria-pressed="${k===F.emp}"><b>${h(e.name)}</b>${F.store==='todas'&&STORES.length>1?`<small>${h(STORES.find(x=>x.id===st).short)}</small>`:''}<span class="fol-st ${ok?'ok':'bad'}">${ok?'✓':'⚠ '+(a.sem0.length||'')+(a.semX.length?' +':'')}</span></button>`}).join('')}</div></div>
     <p class="small muted" style="margin:0"><b>2.</b> Toque nos dias do calendário para marcar ou tirar a folga de <b>${sel?h(sel.e.name):'—'}</b>. Cada dia mostra quem está de folga.</p>
@@ -1233,8 +1242,10 @@ function viewFolgas5x2(){
   ${semanasMes(ym).map(w=>`<div class="cal-w">${[0,1,2,3,4,5,6].map(i=>{const d=addDays(w,i);const fora=d.slice(0,7)!==ym;const n=+d.slice(8);
     if(i===0)return `<div class="cal-d seg ${fora?'fora':''}"><span class="cal-n">${n}</span><span class="cal-closed">Fechado<br>folga de todos</span></div>`;
     const quem=rows.filter(({st,e})=>isFolga(st,e,d));const meu=isFolga(sel.st,sel.e,d);const nv=isNiver(sel.e,d);
-    const antes=d<FOLGA_5X2;const pode=!antes||i===6;
-    const act=antes?(i===6?`data-act="fset" data-k="${k}" data-v="${d}"`:''):`data-act="fdia" data-k="${k}" data-v="${d}"`;
+    const antes=d<FOLGA_5X2;const lojasF=F.store==='todas'?[...new Set(rows.map(r=>r.st))]:[F.store];const fech=lojasF.length&&lojasF.every(st=>lojaFechada(st,d));const algumF=lojasF.filter(st=>lojaFechada(st,d));
+    const pode=F.modo==='fecha'?!antes:(!antes||i===6);
+    const act=F.modo==='fecha'?`data-act="ffecha" data-v="${d}"`:antes?(i===6?`data-act="fset" data-k="${k}" data-v="${d}"`:''):`data-act="fdia" data-k="${k}" data-v="${d}"`;
+    if(fech||algumF.length){return `<${pode?'button':'div'} class="cal-d fechado ${fora?'fora':''} ${d===hoje?'hoje':''}" ${pode&&F.modo==='fecha'?act:''} ${pode&&F.modo!=='fecha'?'disabled':''}><span class="cal-n">${n} 🔒</span><span class="cal-closed">Loja fechada${lojasF.length>1&&!fech?' ('+algumF.map(st=>h((STORES.find(x=>x.id===st)||{}).short||st)).join(', ')+')':''}<br>folga de todos</span></${pode?'button':'div'}>`}
     return `<${pode?'button':'div'} class="cal-d ${fora?'fora':''} ${meu?'meu':''} ${d===hoje?'hoje':''} ${pode?'':'trav'}" ${pode?act:''} ${pode?`aria-pressed="${meu}" aria-label="${n} de ${MESES[+d.slice(5,7)-1]}${meu?': folga de '+h(sel.e.name):''}"`:''}>
       <span class="cal-n">${n}${meu?` <span class="cal-f">${nv&&!diasFolga(sel.st,sel.e).has(d)?'A':'F'}</span>`:''}</span>
       <span class="cal-who">${quem.map(({st,e})=>`<span class="${fkey(st,e)===k?'eu':''}">${h(e.name)}${isNiver(e,d)?' 🎂':''}</span>`).join('')}</span>
@@ -1958,6 +1969,8 @@ document.addEventListener('click',e=>{if(e.target&&e.target.id==='modal'){e.targ
   if(a==='rstore'){S.rotStore=v;render();return}
   if(a==='fdia'){setDiaFolga(b.dataset.k,v);return}
   if(a==='fpub'){setPublicado(S.fol.month,v==='1');return}
+  if(a==='fmodo'){S.fol.modo=v;render();return}
+  if(a==='ffecha'){const F=S.fol;const rows=folEmps(F.store);const ls=F.store==='todas'?[...new Set(rows.map(r=>r.st))]:[F.store];if(ls.length)setFechado(ls,v);return}
   if(a==='fsel'){S.fol.emp=v;render();return}
   if(a==='refsem'){refazerSemanaPassada(b.dataset.s,id,v);return}
   if(a==='rpast'){S.rotPast=S.rotPast||{off:-1};S.rotPast.off=Math.min(-1,S.rotPast.off+(+v));render();return}
