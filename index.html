@@ -396,6 +396,7 @@ table.folg tfoot td{border-top:2px solid var(--line)}
 .f5x2 .dom-col{background:rgba(232,137,43,.08)}
 .fcell.niv{background:#fde7ef;color:#a3174b;border-color:#f6b6cc}
 .fclosed{color:var(--muted)}
+.f5x2 td.antes{background:rgba(0,0,0,.03)}
 .favisos{display:flex;flex-direction:column;gap:3px;margin-top:4px}
 .favisos .chip{font-size:11px;white-space:nowrap}
 </style>
@@ -569,8 +570,8 @@ function folgasDom(store,emp){// Map domingo -> 'F' (fixo ou escolhido), 'A' (an
     else{const base=exMes[ym]?exMes[ym]:[fixoDate(n,ym)];if(base.includes(d))f='F';else if(isNiver(emp,d))f='A'}
     if(f){out.set(d,f);cnt=0}else cnt++}
   FOLMEMO[key]=out;return out}
-// A partir de dez/2026: escala 5x2 — segunda (loja fechada) + 1 folga por semana, marcada dia a dia pela gestora
-const FOLGA_5X2='2026-12-01';
+// A partir de 16/12/2026: escala 5x2 (até 15/12 vale a folga de domingo) — segunda (loja fechada) + 1 folga por semana, marcada dia a dia pela gestora
+const FOLGA_5X2='2026-12-16';
 function diasFolga(store,emp){const k=fkey(store,emp);const L=new Set();Object.values(S.folgas||{}).forEach(d=>{const v=d&&d.dias&&d.dias[k];if(Array.isArray(v))v.forEach(x=>L.add(x))});return L}
 function isFolga(store,emp,date){if(!emp)return false;if(new Date(date+'T00:00:00Z').getUTCDay()===1)return true;if(isNiver(emp,date))return true;if(isGestorF(emp))return false;
   if(date>=FOLGA_5X2)return diasFolga(store,emp).has(date);return folgasDom(store,emp).has(date)}
@@ -1179,15 +1180,17 @@ function viewFolgas5x2(){
   let out=`<div class="stack"><section class="panel"><div class="panel-b stack" style="gap:12px">
     <div class="field"><span class="label">Mês</span><div class="seg"><button data-act="fmonth" data-v="-1" aria-label="Mês anterior">‹</button><button aria-pressed="true" disabled style="flex:3">${MESES[m-1]} ${y}</button><button data-act="fmonth" data-v="1" aria-label="Próximo mês">›</button></div></div>
     <div class="field"><span class="label">Loja</span>${pick('fstore',F.store,[['todas','Todas'],...STORES.map(x=>[x.id,x.short])])}</div>
-    <p class="small muted" style="margin:0"><b>Escala 5x2:</b> segunda é folga de todos (loja fechada) e cada funcionário tem <b>mais 1 folga por semana</b>. Toque no dia para marcar ou desmarcar a folga. O app avisa quem ficou sem folga ou com folga a mais em alguma semana. Aniversário (<b>A</b>) já conta como folga.</p>
+    ${ym===FOLGA_5X2.slice(0,7)?`<div class="notice" style="margin:0">Até <b>${fmtDM(addDays(FOLGA_5X2,-1))}</b> vale a regra antiga (folga de domingo, em cinza claro). A partir de <b>${fmtDM(FOLGA_5X2)}</b> começa a escala 5x2.</div>`:''}<p class="small muted" style="margin:0"><b>Escala 5x2:</b> segunda é folga de todos (loja fechada) e cada funcionário tem <b>mais 1 folga por semana</b>. Toque no dia para marcar ou desmarcar a folga. O app avisa quem ficou sem folga ou com folga a mais em alguma semana. Aniversário (<b>A</b>) já conta como folga.</p>
   </div></section>`;
   out+=`<section class="panel"><div class="panel-h"><h2>Escala de folga · ${MESES[m-1]}</h2></div><div class="tablewrap"><table class="grid folg f5x2"><thead><tr><th class="sticky">Funcionário</th>${days.map(d=>`<th class="${dw(d)===1?'seg-col':''} ${dw(d)===0?'dom-col':''}"><span class="small">${LET[dw(d)]}</span><br>${+d.slice(8)}</th>`).join('')}</tr></thead><tbody>
   ${rows.map(({st,e})=>{const k=fkey(st,e);const set=diasFolga(st,e);
-    const sem0=[],semX=[];semanas.forEach(w=>{const ds=[1,2,3,4,5,6].map(i=>addDays(w,i));const n=ds.filter(d=>set.has(d)||isNiver(e,d)).length;if(n===0)sem0.push(fmtDM(addDays(w,1)));if(n>1)semX.push(fmtDM(addDays(w,1)))});
-    const avisos=[sem0.length?`<span class="chip bad" title="Semanas começando em ${sem0.join(', ')}">⚠ ${sem0.length===semanas.length?'nenhuma folga marcada':'sem folga: '+sem0.join(', ')}</span>`:'',semX.length?`<span class="chip me" title="Mais de 1 folga nas semanas de ${semX.join(', ')}">2+ folgas: ${semX.join(', ')}</span>`:''].filter(Boolean);
+    const sem0=[],semX=[];semanas.filter(w=>addDays(w,6)>=FOLGA_5X2).forEach(w=>{const ds=[1,2,3,4,5,6].map(i=>addDays(w,i));const n=ds.filter(d=>isFolga(st,e,d)).length;if(n===0)sem0.push(fmtDM(addDays(w,1)));if(n>1)semX.push(fmtDM(addDays(w,1)))});
+    const avisos=[sem0.length?`<span class="chip bad" title="Semanas começando em ${sem0.join(', ')}">⚠ ${sem0.length===semanas.filter(w=>addDays(w,6)>=FOLGA_5X2).length?'nenhuma folga marcada':'sem folga: '+sem0.join(', ')}</span>`:'',semX.length?`<span class="chip me" title="Mais de 1 folga nas semanas de ${semX.join(', ')}">2+ folgas: ${semX.join(', ')}</span>`:''].filter(Boolean);
     if(!avisos.length)avisos.push('<span class="chip ok">✓ 1 folga por semana</span>');
     return `<tr><td class="sticky"><b>${h(e.name)}</b>${F.store==='todas'&&STORES.length>1?`<div class="small muted">${h(STORES.find(x=>x.id===st).short)}</div>`:''}${avisos.length?`<div class="favisos">${avisos.join('')}</div>`:''}</td>
-    ${days.map(d=>{if(dw(d)===1)return `<td class="seg-col"><span class="fclosed" title="Segunda: loja fechada">–</span></td>`;const nv=isNiver(e,d);const on=set.has(d);
+    ${days.map(d=>{if(dw(d)===1)return `<td class="seg-col"><span class="fclosed" title="Segunda: loja fechada">–</span></td>`;
+      if(d<FOLGA_5X2){if(dw(d)!==0)return `<td class="antes"><span class="fclosed" title="Até ${fmtDM(addDays(FOLGA_5X2,-1))}: só folga de domingo">·</span></td>`;const f=folgasDom(st,e).get(d)||'';return `<td class="dom-col antes"><button class="fcell ${f?'on':''}" data-act="fset" data-k="${k}" data-v="${d}" aria-pressed="${!!f}" title="Folga de domingo (regra antiga)">${f==='A'?'A':f?'F':''}</button></td>`}
+      const nv=isNiver(e,d);const on=set.has(d);
       return `<td class="${dw(d)===0?'dom-col':''}"><button class="fcell ${on||nv?'on':''} ${nv&&!on?'niv':''}" data-act="fdia" data-k="${k}" data-v="${d}" aria-pressed="${on}" aria-label="Folga de ${h(e.name)} em ${fmtDM(d)}">${on?'F':nv?'A':''}</button></td>`}).join('')}</tr>`}).join('')}
   </tbody><tfoot><tr><td class="sticky"><b>De folga</b></td>${days.map(d=>{if(dw(d)===1)return '<td class="seg-col"></td>';const c=rows.filter(({st,e})=>isFolga(st,e,d)).length;return `<td class="num"><b>${c||''}</b></td>`}).join('')}</tr></tfoot></table></div>
   <p class="small muted" style="padding:10px 16px 14px;margin:0"><b>F</b> = folga · <b>A</b> = aniversário · <b>–</b> = segunda, loja fechada. A linha <b>De folga</b> mostra quantos estão de folga em cada dia.</p></section></div>`;
